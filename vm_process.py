@@ -7,7 +7,6 @@ import logging
 import string
 import datetime
 import smtplib
-import time
 from enum import Enum
 from dotenv import load_dotenv
 from email.mime.text import MIMEText
