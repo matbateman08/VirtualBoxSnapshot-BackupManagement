@@ -38,7 +38,7 @@ class BackupType(Enum):
 def main():
     generate_config_from_script()
     setup_environment_variables()
-    log_file_path = configure_logging()
+    log_file_path = configure_logging("vmmaintenance")
     try:
         if is_execution_day():
             Paths = read_config("Paths")
@@ -49,6 +49,7 @@ def main():
             VMDetails = read_config("VMDetails")
             vm_names_section = VMDetails['vm_names']
             for vm_name in vm_names_section.split(','):
+                vm_name = vm_name.strip()
                 manage_vm_power(vm_name, VMAction.POWER_OFF)
                 create_snapshot(vm_name)
                 backup_management(Paths, vm_name, "Create")
@@ -169,15 +170,15 @@ def read_config(section_name):
 
     return section
 
-def configure_logging():
+def configure_logging(logfile):
     # Get the absolute path of the script
     script_directory = os.path.dirname(os.path.abspath(__file__))
     
     # Generate a log file path based on the current date
     today_date = datetime.date.today().strftime("%Y-%m-%d")
-    logs_folder = os.path.join(script_directory, 'logs', 'vmmaintenancelogs')
+    logs_folder = os.path.join(script_directory, 'logs', logfile)
     os.makedirs(logs_folder, exist_ok=True)
-    log_file_path = os.path.join(logs_folder, f'{today_date}_vm_maintenance.log')
+    log_file_path = os.path.join(logs_folder, f'{today_date}_{logfile}.log')
 
     # Configure logging first
     logging.basicConfig(
@@ -319,18 +320,35 @@ def manage_vm_power(vm_name, action):
             log_message = f"Powering On {vm_name} in headless mode..."
         else:
             logging.critical(f"Error: Invalid action '{action}'. Supported actions are 'power_off' and 'start_headless'.")
-            return
+            return False
 
         execute_vbox_command(command, log_message)
-    
+        return True 
+     
     except subprocess.CalledProcessError as e:
         if "returned non-zero exit status 1" in str(e):
-            logging.info(f"VM '{vm_name}' is already turned off.")
+            vm_state = get_vm_state(vm_name)
+            logging.info(f"VM '{vm_name}' Current state: {vm_state}")
         elif "VBOX_E_INVALID_OBJECT_STATE" in e.stderr:
-            logging.info(f"VM '{vm_name}' is already running.")
+            vm_state = get_vm_state(vm_name)
+            logging.info(f"VM '{vm_name}' Current state: {vm_state}")
         else:
             logging.info(f"Failed to start/stop VM '{vm_name}'.")
             logging.info(f"Error: {e.stderr}")
+        return False
+
+def get_vm_state(vm_name):
+    try:
+        command = ["VBoxManage", "showvminfo", vm_name, "--machinereadable"]
+        result = execute_vbox_command(command, f"Getting state of VM '{vm_name}'...")
+        vm_state = result.stdout.splitlines()
+        for line in vm_state:
+            if line.startswith("VMState="):
+                state = line.split("=")[1].strip('"')
+                return state
+    except Exception as e:
+        logging.error(f"Error while getting state of VM '{vm_name}': {e}")
+    return "UNKNOWN"
 
 def backup_management(Paths, vm_name, state):
     BackupDetails = read_config("BackupDetails")
@@ -567,10 +585,11 @@ def send_log_email(log_file_path):
 
         subject = f"Log file for {datetime.date.today().strftime('%Y-%m-%d')}"
 
-        # Read the content of the log file
+        # Read the content of the log file with the latest entries at the top
         try:
             with open(log_file_path, 'r') as log_file:
-                log_content = log_file.read()
+                log_content = reversed(log_file.readlines())
+                log_content = ''.join(log_content)
         except FileNotFoundError as e:
             logging.error(f"File not found error: {e}")
             return  # Stop further execution if file not found
