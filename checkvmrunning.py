@@ -1,8 +1,6 @@
 import os
 import logging
-from config_and_env import configure_logging, generate_config_from_script, setup_environment_variables, read_config
-from vboxcontrols import VMAction, manage_vm_power
-from sendemail import send_log_email
+from vm_process import VMAction, configure_logging, generate_config_from_script, setup_environment_variables, read_config, manage_vm_power, send_log_email
 
 def main():
     try:
