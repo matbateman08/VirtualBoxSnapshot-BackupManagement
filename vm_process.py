@@ -7,6 +7,7 @@ import logging
 import string
 import datetime
 import smtplib
+import time
 from enum import Enum
 from dotenv import load_dotenv
 from email.mime.text import MIMEText
@@ -36,26 +37,26 @@ class BackupType(Enum):
     MONTHLY_NAS = "nas_monthly_path"
 
 def main():
+    generate_config_from_script()
+    setup_environment_variables()
     log_file_path = configure_logging()
     try:
         if is_execution_day():
-            setup_environment_variables()
-            paths = read_config("Paths")
-            disconnect_all_active_connections(paths['nas_path'])
+            Paths = read_config("Paths")
+            disconnect_all_active_connections(Paths['nas_path'])
             drive_letter = find_available_drive_letter()
-            map_network_drive(paths['nas_path'], drive_letter)
-            os.chdir(paths['virtual_box_path'])
-            vm_details = read_config("VMDetails")
-            vm_names = vm_details.get('vm_names').split(', ')
-
-            for vm_name in vm_names:
+            map_network_drive(Paths['nas_path'], drive_letter)
+            os.chdir(Paths['virtual_box_path'])
+            VMDetails = read_config("VMDetails")
+            vm_names_section = VMDetails['vm_names']
+            for vm_name in vm_names_section.split(','):
                 manage_vm_power(vm_name, VMAction.POWER_OFF)
                 create_snapshot(vm_name)
-                backup_management(paths, vm_name, "Create")
+                backup_management(Paths, vm_name, "Create")
                 manage_vm_power(vm_name, VMAction.START_HEADLESS)
-            backup_management(paths, vm_name, "Backup")                
+            backup_management(Paths, vm_name, "Backup")                
             send_log_email(log_file_path)
-            disconnect_all_active_connections(paths['nas_path'])
+            disconnect_all_active_connections(Paths['nas_path'])
         else:
             logging.info("Not running the script today.")
     except Exception as e:
@@ -84,6 +85,56 @@ def setup_environment_variables():
                 # Encapsulate the value in single quotes if it contains special characters
                 value_to_write = value if not re.search(r"[^\w\-]", value) else f"'{value}'"
                 f.write(f"{env_var}={value_to_write}\n")
+
+def generate_config_from_script():
+    def parse_config_from_script():
+        script_path = os.path.abspath(__file__)
+        try:
+            with open(script_path, 'r') as file:
+                script_lines = file.readlines()
+                section_paths = {}
+                for line in script_lines:
+                    matches = re.findall(r"([A-Z]\w+)\[['\"](.+?)['\"]\]", line)
+                    for match in matches:
+                        header, path = match
+                        if header and path:
+                            combined_key = header + "['" + path + "']"
+                            section_paths[combined_key] = path
+                return section_paths
+        except FileNotFoundError:
+            print(f"File '{script_path}' not found.")
+            return {}
+
+    section_paths = parse_config_from_script()
+    formatted_output = {}
+    for key, value in section_paths.items():
+        prefix = key.split("['")[0]
+        if prefix not in formatted_output:
+            formatted_output[prefix] = {}
+        # Extracting the last part of the key for displaying
+        location_key = key.split("['")[-1][:-2]
+        formatted_output[prefix][location_key] = value
+
+    config = configparser.ConfigParser()
+
+    # Check if config file exists
+    if not os.path.exists('config.ini'):
+        for prefix, items in formatted_output.items():
+            config[prefix] = {}  # Creating the section
+            print(f"[{prefix}]")
+            for key, value in items.items():
+                input_location = input(f"Enter location for {key} (press enter to keep default value '{value}'): ")
+                if input_location.strip():  # If user provided input
+                    items[key] = input_location  # Use the input as the new value
+                # Here you might want to add some validation or error handling for the user input
+                print(f"{key} = {items[key]}")
+                config[prefix][key] = items[key]
+
+        # Writing the config to a file
+        with open('config.ini', 'w') as configfile:
+            config.write(configfile)
+    else:
+        print("Config file 'config.ini' already exists. Skipping user input and file writing.")
 
 def read_config(section_name):
     config = configparser.ConfigParser()
@@ -230,15 +281,15 @@ def find_available_drive_letter():
     return None
 
 def is_execution_day():
-    executionday = read_config("Misc")
-    executionday = int(executionday['weekday_end'])
+    Misc = read_config("Misc")
+    executionday = int(Misc['weekday_end'])
     current_day = datetime.datetime.now().weekday()
     return current_day < executionday
 
 def is_last_working_day_of_month():
     try:
-        daysinmonth = read_config("Misc")
-        daysinmonth = int(daysinmonth['days_in_month'])
+        Misc = read_config("Misc")
+        daysinmonth = int(Misc['days_in_month'])
         today = datetime.date.today()
         next_month = today.replace(day=daysinmonth) + datetime.timedelta(days=4)  # Jump to end of next month
         last_working_day = next_month - datetime.timedelta(days=next_month.day)  # Backtrack to last weekday
@@ -284,22 +335,22 @@ def manage_vm_power(vm_name, action):
             logging.info(f"Failed to start/stop VM '{vm_name}'.")
             logging.info(f"Error: {e.stderr}")
 
-def backup_management(paths, vm_name, state):
-    backup_details = read_config("BackupDetails")
+def backup_management(Paths, vm_name, state):
+    BackupDetails = read_config("BackupDetails")
     
-    daily_retention = int(backup_details['daily_retention'])
-    monthly_retention = int(backup_details['monthly_retention'])
+    daily_retention = int(BackupDetails['daily_retention'])
+    monthly_retention = int(BackupDetails['monthly_retention'])
 
     daily_backup_paths = {
-        BackupType.DAILY_LOCAL: paths['source_daily_backup_path'],
-        BackupType.DAILY_OFFICE365: paths['office365_daily_path'],
-        BackupType.DAILY_NAS: paths['nas_daily_path']
+        BackupType.DAILY_LOCAL: Paths['source_daily_backup_path'],
+        BackupType.DAILY_OFFICE365: Paths['office365_daily_path'],
+        BackupType.DAILY_NAS: Paths['nas_daily_path']
     }
 
     monthly_backup_paths = {
-        BackupType.MONTHLY_LOCAL: paths['source_monthly_backup_path'],
-        BackupType.MONTHLY_OFFICE365: paths['office365_monthly_path'],
-        BackupType.MONTHLY_NAS: paths['nas_monthly_path']
+        BackupType.MONTHLY_LOCAL: Paths['source_monthly_backup_path'],
+        BackupType.MONTHLY_OFFICE365: Paths['office365_monthly_path'],
+        BackupType.MONTHLY_NAS: Paths['nas_monthly_path']
     }
 
     try:
@@ -318,13 +369,13 @@ def backup_management(paths, vm_name, state):
             logging.info("Copying Files to Office365 & NAS")
             for backup_type, backup_path in daily_backup_paths.items():
                 if backup_type not in [BackupType.DAILY_LOCAL, BackupType.MONTHLY_LOCAL]:
-                    copy_backups(paths['source_daily_backup_path'], backup_path)
+                    copy_backups(Paths['source_daily_backup_path'], backup_path)
 
             if is_last_working_day_of_month():
                 for backup_type, backup_path in monthly_backup_paths.items():
                     if backup_type not in [BackupType.DAILY_LOCAL, BackupType.MONTHLY_LOCAL]:
                         logging.info("It is the last day of the month, so copying this month's backup.")
-                        copy_backups(paths['source_daily_backup_path'], backup_path)
+                        copy_backups(Paths['source_daily_backup_path'], backup_path)
 
             for backup_type, backup_path in daily_backup_paths.items():
                 cleanup_files(backup_path, daily_retention)
@@ -334,8 +385,8 @@ def backup_management(paths, vm_name, state):
                     logging.info("It is the last day of the month, so performing the cleanup on the monthly backups.")
                     cleanup_files(backup_path, monthly_retention)
 
-            log_location = paths['logs_location']
-            copy_vm_management(paths)
+            log_location = Paths['logs_location']
+            copy_vm_management(Paths)
             logging.info(f"Cleaning up: {log_location} with retention policy of: {daily_retention}")
             cleanup_files(log_location, daily_retention)
 
@@ -435,8 +486,8 @@ def snapshot_exists(vm_name, snapshot_name):
         return False
         
 def snapshot_retention_management(vm_name):
-    snapshot_details = read_config("SnapshotDetails")
-    daily_retention = int(snapshot_details['daily_retention'])
+    SnapshotDetails = read_config("SnapshotDetails")
+    daily_retention = int(SnapshotDetails['daily_retention'])
     try:
         logging.info(f"Managing {vm_name} Snapshots retention...")
         snapshots_info = manage_snapshot(vm_name, None, SnapshotAction.LIST)
@@ -484,11 +535,11 @@ def manage_snapshot(vm_name, snapshot_name, action):
     except subprocess.CalledProcessError as e:
         logging.critical(f"Error during snapshot operation: {e}")
 
-def copy_vm_management(paths):
+def copy_vm_management(Paths):
     try:
-        source_path = paths['vm_management_source_path']
-        destination_nas_path = paths['nas_misc_path']
-        destination_office365_path = paths['office365_misc_path']
+        source_path = Paths['vm_management_source_path']
+        destination_nas_path = Paths['nas_misc_path']
+        destination_office365_path = Paths['office365_misc_path']
 
         # Create backup directories
         create_backup_directories(destination_nas_path)
