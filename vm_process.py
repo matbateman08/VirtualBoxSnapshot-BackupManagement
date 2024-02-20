@@ -39,8 +39,8 @@ def main():
     log_file_path = configure_logging()
     try:
         if is_execution_day():
+            setup_environment_variables()
             paths = read_config("Paths")
-
             disconnect_all_active_connections(paths['nas_path'])
             drive_letter = find_available_drive_letter()
             map_network_drive(paths['nas_path'], drive_letter)
@@ -60,6 +60,30 @@ def main():
             logging.info("Not running the script today.")
     except Exception as e:
         logging.critical(f"Error encountered: {e}")
+
+def setup_environment_variables():
+    env_file = '.env'
+    if not os.path.exists(env_file):
+        print("No .env file found. Let's set it up.")
+        used_env_vars = set()
+        script_path = os.path.abspath(__file__)
+
+        # Search the script for os.getenv() calls
+        with open(script_path, 'r') as script_file:
+            script_content = script_file.read()
+
+            # Find all occurrences of os.getenv()
+            env_vars_used_in_script = re.findall(r"os\.getenv\(['\"]([^'\"]+)['\"]\)", script_content)
+            used_env_vars.update(env_vars_used_in_script)
+
+        # Ask the user for values of the detected environment variables
+        with open(env_file, 'w') as f:
+            print("Please provide values for the following environment variables:")
+            for env_var in used_env_vars:
+                value = input(f"{env_var}: ")
+                # Encapsulate the value in single quotes if it contains special characters
+                value_to_write = value if not re.search(r"[^\w\-]", value) else f"'{value}'"
+                f.write(f"{env_var}={value_to_write}\n")
 
 def read_config(section_name):
     config = configparser.ConfigParser()
