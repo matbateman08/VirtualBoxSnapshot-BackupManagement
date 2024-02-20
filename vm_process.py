@@ -65,7 +65,7 @@ def main():
 def setup_environment_variables():
     env_file = '.env'
     if not os.path.exists(env_file):
-        print("No .env file found. Let's set it up.")
+        logging.info("No .env file found. Let's set it up.")
         used_env_vars = set()
         script_path = os.path.abspath(__file__)
 
@@ -79,7 +79,7 @@ def setup_environment_variables():
 
         # Ask the user for values of the detected environment variables
         with open(env_file, 'w') as f:
-            print("Please provide values for the following environment variables:")
+            logging.info("Please provide values for the following environment variables:")
             for env_var in used_env_vars:
                 value = input(f"{env_var}: ")
                 # Encapsulate the value in single quotes if it contains special characters
@@ -102,7 +102,7 @@ def generate_config_from_script():
                             section_paths[combined_key] = path
                 return section_paths
         except FileNotFoundError:
-            print(f"File '{script_path}' not found.")
+            logging.info(f"File '{script_path}' not found.")
             return {}
 
     section_paths = parse_config_from_script()
@@ -121,20 +121,18 @@ def generate_config_from_script():
     if not os.path.exists('config.ini'):
         for prefix, items in formatted_output.items():
             config[prefix] = {}  # Creating the section
-            print(f"[{prefix}]")
             for key, value in items.items():
                 input_location = input(f"Enter location for {key} (press enter to keep default value '{value}'): ")
                 if input_location.strip():  # If user provided input
                     items[key] = input_location  # Use the input as the new value
                 # Here you might want to add some validation or error handling for the user input
-                print(f"{key} = {items[key]}")
                 config[prefix][key] = items[key]
 
         # Writing the config to a file
         with open('config.ini', 'w') as configfile:
             config.write(configfile)
     else:
-        print("Config file 'config.ini' already exists. Skipping user input and file writing.")
+        logging.info("Config file 'config.ini' already exists. Skipping user input and file writing.")
 
 def read_config(section_name):
     config = configparser.ConfigParser()
