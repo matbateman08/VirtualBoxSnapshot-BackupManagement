@@ -162,11 +162,19 @@ def main():
 
         not_running_counter = 0  # Initialize the counter
         
-        for vm_name in vm_names:
+        VMDetails = read_config("VMDetails")
+        vm_names_section = VMDetails['vm_names']
+        for vm_name in vm_names_section.split(','):
             if start_vm(vm_name):
                 send_outlook_email(vm_name)
                 logging.info(f"VM: {vm_name} is already running, so incrementing counter: {not_running_counter}")
                 not_running_counter += 1  # Increment the counter for each VM not running
+
+        #for vm_name in vm_names:
+        #    if start_vm(vm_name):
+        #        send_outlook_email(vm_name)
+        #        logging.info(f"VM: {vm_name} is already running, so incrementing counter: {not_running_counter}")
+        #        not_running_counter += 1  # Increment the counter for each VM not running
         
         if not_running_counter == 0:
             # All VMs are running, send an email
