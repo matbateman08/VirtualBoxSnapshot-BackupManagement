@@ -36,9 +36,9 @@ class BackupType(Enum):
     MONTHLY_NAS = "nas_monthly_path"
 
 def main():
+    log_file_path = configure_logging("vmmaintenance")
     generate_config_from_script()
     setup_environment_variables()
-    log_file_path = configure_logging("vmmaintenance")
     try:
         if is_execution_day():
             Paths = read_config("Paths")
