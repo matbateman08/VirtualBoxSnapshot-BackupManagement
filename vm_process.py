@@ -162,12 +162,6 @@ def read_config(section_name):
 
     section = config[section_name]
 
-    #logging.info(f"{section_name} Section:")
-    #for key, value in section.items():
-    #    logging.info(f"  {key}: {value}")
-
-    #logging.info("")
-
     return section
 
 def configure_logging(logfile):

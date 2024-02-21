@@ -1,62 +1,46 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import os
-import logging
-import re
+from vm_process import read_config  
 
-from vm_process import setup_environment_variables  # Replace with actual module path
+class TestReadConfig(unittest.TestCase):
 
-class SetupEnvironmentVariablesTest(unittest.TestCase):
+    @patch('configparser.ConfigParser')
+    @patch('os.path.exists', return_value=True)
+    def test_read_config_success(self, mock_exists, mock_config_parser):
+        # Mock the behavior of the ConfigParser object
+        mock_parser_instance = MagicMock()
+        mock_parser_instance.__contains__.return_value = True
+        mock_parser_instance.__getitem__.return_value = {'key': 'value'}
+        mock_config_parser.return_value = mock_parser_instance
 
-    def mock_input(self, mock_input_value):
-        """Patches the `input` function to return a specific value."""
-        original_input = __builtins__.input
-        __builtins__.input = MagicMock(return_value=mock_input_value)
-        return original_input
+        # Call the function
+        result = read_config('example_section')
 
-    def test_no_env_file(self):
-        """Tests the behavior when no .env file exists."""
+        # Assert that the result is as expected
+        self.assertEqual(result, {'key': 'value'})
 
-        # Patch open to prevent file creation, os.getenv to always return None, and logging.info
-        with patch('os.path.exists', return_value=False), patch('os.getenv', return_value=None), patch('logging.info'):
-            setup_environment_variables()
+    @patch('builtins.open', new_callable=MagicMock)
+    @patch('os.path.exists', return_value=False)
+    def test_read_config_file_not_exists(self, mock_exists, mock_open):
+        # Call the function
+        result = read_config('example_section')
 
-            # Assert that the input function was called for each used environment variable
-            # Mock calls are stored in `mock_calls` attribute
-            assert input.mock_calls.call_count >= 1
+        # Assert that the result is None
+        self.assertIsNone(result)
 
-            # Verify that a .env file was created with placeholder values (replace with placeholder strings)
-            env_file_content = open('.env', 'r').read()
-            self.assertTrue("PLACEHOLDER_VAR1=" in env_file_content)
-            self.assertTrue("PLACEHOLDER_VAR2=" in env_file_content)
+    @patch('builtins.open', new_callable=MagicMock)
+    @patch('os.path.exists', return_value=True)
+    def test_read_config_section_not_exists(self, mock_exists, mock_open):
+        # Mock the ConfigParser object
+        mock_parser = MagicMock()
+        mock_parser.__contains__.return_value = False
+        mock_open.return_value.__enter__.return_value = mock_parser
 
-            # Remove test-generated .env file
-            os.remove('.env')
+        # Call the function
+        result = read_config('nonexistent_section')
 
-    def test_env_file_exists(self):
-        """Tests the behavior when a .env file exists."""
-
-        # Patch os.path.exists to return True, os.getenv to always return None, and logging.info
-        with patch('os.path.exists', return_value=True), patch('os.getenv', return_value=None), patch('logging.info'):
-            # Create a test .env file with predefined values (replace with meaningful values)
-            with open('.env', 'w') as f:
-                f.write("ENV_VAR1=value1\nENV_VAR2=value2")
-
-            setup_environment_variables()
-
-            # Assert that no prompts were displayed by the patched input function
-            self.assertEqual(input.mock_calls.call_count, 0)
-
-            # Verify that the existing .env file was not modified
-            env_file_content = open('.env', 'r').read()
-            self.assertEqual(env_file_content, "ENV_VAR1=value1\nENV_VAR2=value2")
-
-            # Remove test-generated .env file
-            os.remove('.env')
-
-    # Add more test cases to cover other scenarios, such as:
-    # - Specific error handling (e.g., invalid input, I/O errors)
-    # - Edge cases (e.g., empty script, specific patterns to detect)
+        # Assert that the result is None
+        self.assertIsNone(result)
 
 if __name__ == '__main__':
     unittest.main()
