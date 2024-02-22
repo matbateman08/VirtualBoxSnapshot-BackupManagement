@@ -52,7 +52,7 @@ def main():
     vm_names_section = VMDetails['vm_names']
     for vm_name in vm_names_section.split(','):
         vm_name = vm_name.strip()
-    #    manage_vm_action(vm_name, VMAction.POWER_OFF)
+        manage_vm_action(vm_name, VMAction.POWER_OFF)
     #            create_snapshot(vm_name)
     #            backup_management(Paths, vm_name, "Create")
     #    manage_vm_action(vm_name, VMAction.START_HEADLESS)
@@ -352,13 +352,16 @@ def manage_vm_action(vm_name, action):
             logging.info(f"Error: {e.stderr}")
         return False
 
-def build_command_and_log_message(vm_name, action):
+def build_command_and_log_message(vm_name, action=None):
     if action == VMAction.POWER_OFF:
         command = [VM.VBOX_MANAGE.value, "controlvm", vm_name, "poweroff"]
         log_message = f"Powering off {vm_name}..."
     elif action == VMAction.START_HEADLESS:
-        command = [VM.VBOX_MANAGE.value, 'startvm', vm_name, '--type', 'headless']
+        command = [VM.VBOX_MANAGE.value, "startvm", vm_name, '--type', 'headless']
         log_message = f"Powering On {vm_name} in headless mode..."
+    elif action == VMAction.SHOW_STATE:
+        command = [VM.VBOX_MANAGE.value, "showvminfo", vm_name, "--machinereadable"]
+        log_message = f"Getting state of VM '{vm_name}'..."
     else:
         handle_invalid_action(action)
     return command, log_message
@@ -369,24 +372,17 @@ def handle_invalid_action(action):
 
 def get_vm_state(vm_name):
     try:
-        command = build_showvminfo_command(vm_name)
-        result = execute_subprocess_command(command, f"Getting state of VM '{vm_name}'...")
-        vm_state = extract_vm_state(result)
-        return vm_state
+        command, log_message = build_command_and_log_message(vm_name, VMAction.SHOW_STATE)
+        success, result = execute_subprocess_command(command, log_message)  # Capture both return values
+        if success:
+            vm_state = extract_vm_state(result)
+            return vm_state
+        else:
+            logging.error(f"Error while getting state of VM '{vm_name}': {result}")
+            return "UNKNOWN"
     except Exception as e:
         logging.error(f"Error while getting state of VM '{vm_name}': {e}")
         return "UNKNOWN"
-
-def build_showvminfo_command(vm_name):
-    return [VM.VBOX_MANAGE.value, "showvminfo", vm_name, "--machinereadable"]
-
-def execute_subprocess_command(command, log_message):
-    try:
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        logging.info(log_message)
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        raise e
 
 def extract_vm_state(stdout):
     vm_state_lines = stdout.splitlines()
