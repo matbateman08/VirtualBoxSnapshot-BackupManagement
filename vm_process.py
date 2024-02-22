@@ -20,6 +20,7 @@ class VM(Enum):
 class VMAction(Enum):
     POWER_OFF = "poweroff"
     START_HEADLESS = "headless"
+    SHOW_STATE = "showvminfo"
 
 class SnapshotAction(Enum):
     LIST = "list"
@@ -36,289 +37,309 @@ class BackupType(Enum):
     MONTHLY_NAS = "nas_monthly_path"
 
 def main():
-    log_file_path = configure_logging("vmmaintenance")
-    generate_config_from_script()
-    setup_environment_variables()
+    #log_file_path = configure_logging("vmmaintenance")
+    #generate_config_from_script()
+    #setup_environment_variables()
+    #try:
+    #    if is_execution_day():
+    Paths = read_config("Paths")
+    #disconnect_all_active_connections(Paths['nas_path'])
+    #drive_letter = find_available_drive_letter()
+    #map_network_drive(Paths['nas_path'], drive_letter)
+    os.chdir(Paths['virtual_box_path'])
+    configure_logging("vmmaintenance")
+    VMDetails = read_config("VMDetails")
+    vm_names_section = VMDetails['vm_names']
+    for vm_name in vm_names_section.split(','):
+        vm_name = vm_name.strip()
+    #    manage_vm_action(vm_name, VMAction.POWER_OFF)
+    #            create_snapshot(vm_name)
+    #            backup_management(Paths, vm_name, "Create")
+    #    manage_vm_action(vm_name, VMAction.START_HEADLESS)
+    #        backup_management(Paths, vm_name, "Backup")                
+    #        send_log_email(log_file_path)
+    #        disconnect_all_active_connections(Paths['nas_path'])
+    #    else:
+    #        logging.info("Not running the script today.")
+    #except Exception as e:
+    #    logging.critical(f"Error encountered: {e}")
+
+####### execute_subprocess_command
+def execute_subprocess_command(command, log_message=None):
     try:
-        if is_execution_day():
-            Paths = read_config("Paths")
-            disconnect_all_active_connections(Paths['nas_path'])
-            drive_letter = find_available_drive_letter()
-            map_network_drive(Paths['nas_path'], drive_letter)
-            os.chdir(Paths['virtual_box_path'])
-            VMDetails = read_config("VMDetails")
-            vm_names_section = VMDetails['vm_names']
-            for vm_name in vm_names_section.split(','):
-                vm_name = vm_name.strip()
-                manage_vm_power(vm_name, VMAction.POWER_OFF)
-                create_snapshot(vm_name)
-                backup_management(Paths, vm_name, "Create")
-                manage_vm_power(vm_name, VMAction.START_HEADLESS)
-            backup_management(Paths, vm_name, "Backup")                
-            send_log_email(log_file_path)
-            disconnect_all_active_connections(Paths['nas_path'])
+        if log_message:
+            logging.info(log_message)
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        if log_message:
+            logging.info(f"{log_message} completed successfully.")
+            return True, result.stdout
         else:
-            logging.info("Not running the script today.")
+            return result.stdout
+    except subprocess.CalledProcessError as e:
+        if log_message:
+            logging.error(f"Error: {e.stderr}")
+        raise  # Re-raise the exception to pass it back to the caller
+
+####### These two functions are used across setup_environment_variables and generate_log_file_path
+def get_script_directory():
+    return os.path.dirname(os.path.abspath(__file__))
+
+def file_exists(file):
+    script_dir = get_script_directory()
+    file_path = os.path.join(script_dir, file)
+    return os.path.exists(file_path)
+
+####### Setup_environment_variables & Helper Functions 
+def find_used_env_vars(script_content):
+    return set(re.findall(r"os\.getenv\(['\"]([^'\"]+)['\"]\)", script_content))
+
+def get_env_values(used_env_vars):
+    env_values = {}
+    logging.info("Please provide values for the following environment variables:")
+    for env_var in used_env_vars:
+        value = input(f"{env_var}: ")
+        env_values[env_var] = value if not re.search(r"[^\w\-]", value) else f"'{value}'"
+    return env_values
+
+def write_env_file(env_file, env_values):
+    try:
+        with open(env_file, 'w') as f:
+            for env_var, value in env_values.items():
+                f.write(f"{env_var}={value}\n")
+        return True
     except Exception as e:
-        logging.critical(f"Error encountered: {e}")
+        logging.error(f"Error writing to {env_file}: {e}")
+        return False
 
 def setup_environment_variables():
     env_file = '.env'
-    if not os.path.exists(env_file):
+    if not file_exists(env_file):
         logging.info("No .env file found. Let's set it up.")
-        used_env_vars = set()
-        script_path = os.path.abspath(__file__)
-
-        # Search the script for os.getenv() calls
+        script_path = get_script_directory()
         with open(script_path, 'r') as script_file:
             script_content = script_file.read()
+        used_env_vars = find_used_env_vars(script_content)
+        env_values = get_env_values(used_env_vars)
+        success = write_env_file(env_file, env_values)
+        if success:
+            logging.info(f".env file created successfully at {env_file}")
+        else:
+            logging.error("Failed to create .env file.")
 
-            # Find all occurrences of os.getenv()
-            env_vars_used_in_script = re.findall(r"os\.getenv\(['\"]([^'\"]+)['\"]\)", script_content)
-            used_env_vars.update(env_vars_used_in_script)
+####### Generate_Config_from_Script & Helper Functions 
+def parse_config_from_script(script_path):
+    try:
+        with open(script_path, 'r') as file:
+            script_lines = file.readlines()
+            section_paths = {}
+            for line in script_lines:
+                matches = re.findall(r"([A-Z]\w+)\[['\"](.+?)['\"]\]", line)
+                for match in matches:
+                    header, path = match
+                    if header and path:
+                        combined_key = header + "['" + path + "']"
+                        section_paths[combined_key] = path
+            return section_paths
+    except FileNotFoundError:
+        logging.info(f"File '{script_path}' not found.")
+        return {}
 
-        # Ask the user for values of the detected environment variables
-        with open(env_file, 'w') as f:
-            logging.info("Please provide values for the following environment variables:")
-            for env_var in used_env_vars:
-                value = input(f"{env_var}: ")
-                # Encapsulate the value in single quotes if it contains special characters
-                value_to_write = value if not re.search(r"[^\w\-]", value) else f"'{value}'"
-                f.write(f"{env_var}={value_to_write}\n")
-
-def generate_config_from_script():
-    def parse_config_from_script():
-        script_path = os.path.abspath(__file__)
-        try:
-            with open(script_path, 'r') as file:
-                script_lines = file.readlines()
-                section_paths = {}
-                for line in script_lines:
-                    matches = re.findall(r"([A-Z]\w+)\[['\"](.+?)['\"]\]", line)
-                    for match in matches:
-                        header, path = match
-                        if header and path:
-                            combined_key = header + "['" + path + "']"
-                            section_paths[combined_key] = path
-                return section_paths
-        except FileNotFoundError:
-            logging.info(f"File '{script_path}' not found.")
-            return {}
-
-    section_paths = parse_config_from_script()
+def format_section_paths(section_paths):
     formatted_output = {}
     for key, value in section_paths.items():
         prefix = key.split("['")[0]
         if prefix not in formatted_output:
             formatted_output[prefix] = {}
-        # Extracting the last part of the key for displaying
         location_key = key.split("['")[-1][:-2]
         formatted_output[prefix][location_key] = value
+    return formatted_output
 
+def get_user_input(formatted_output):
     config = configparser.ConfigParser()
-
-    # Check if config file exists
-    if not os.path.exists('config.ini'):
+    if not file_exists('config.ini'):
         for prefix, items in formatted_output.items():
-            config[prefix] = {}  # Creating the section
+            config[prefix] = {}
             for key, value in items.items():
                 input_location = input(f"Enter location for {key} (press enter to keep default value '{value}'): ")
-                if input_location.strip():  # If user provided input
-                    items[key] = input_location  # Use the input as the new value
-                # Here you might want to add some validation or error handling for the user input
+                if input_location.strip():
+                    items[key] = input_location
                 config[prefix][key] = items[key]
-
-        # Writing the config to a file
-        with open('config.ini', 'w') as configfile:
-            config.write(configfile)
+        return config
     else:
         logging.info("Config file 'config.ini' already exists. Skipping user input and file writing.")
-
-def read_config(section_name):
-    config = configparser.ConfigParser()
-
-    # Get the absolute path of the script
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    
-    # Use a relative path to the config file
-    config_file_path = os.path.join(script_directory, 'config.ini')
-
-    # Check if the file exists
-    if not os.path.exists(config_file_path):
-        logging.critical(f"Error: Config file does not exist at {config_file_path}")
         return None
 
-    # Attempt to read the configuration file
-    read_files = config.read(config_file_path)
+def write_config_to_file(config):
+    if config:
+        with open('config.ini', 'w') as configfile:
+            config.write(configfile)
 
-    if not read_files:
-        logging.critical(f"Error: Config file does not exist at {config_file_path}")
-        return None
-
-    # Check if the specified section exists
+def generate_config_from_script():
+    script_path = get_script_directory()
+    section_paths = parse_config_from_script(script_path)
+    formatted_output = format_section_paths(section_paths)
+    config = get_user_input(formatted_output)
+    write_config_to_file(config)
+####### read_config & Helper Functions
+def read_config_section(config, section_name):
     if section_name not in config:
         logging.critical(f"Error: Section {section_name} does not exist in the config file")
         return None
+    return config[section_name]
 
-    section = config[section_name]
+def read_config(section_name):
+    config_file_path = os.path.join(get_script_directory(), 'config.ini')
 
-    return section
-
-def configure_logging(logfile):
-    # Get the absolute path of the script
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    
-    # Generate a log file path based on the current date
+    if not file_exists(config_file_path):
+        logging.critical(f"Error: Config file does not exist at {config_file_path}")
+        return None
+    try:
+        config = configparser.ConfigParser()
+        config.read(config_file_path)
+        section_data = dict(config[section_name])
+        return section_data
+    except Exception as e:
+        logging.error(f"Error reading config file: {e}")
+        return None
+####### configure_logging & Helper Functions 
+def generate_log_file_path(script_directory, logfile):
     today_date = datetime.date.today().strftime("%Y-%m-%d")
     logs_folder = os.path.join(script_directory, 'logs', logfile)
     os.makedirs(logs_folder, exist_ok=True)
-    log_file_path = os.path.join(logs_folder, f'{today_date}_{logfile}.log')
+    return os.path.join(logs_folder, f'{today_date}_{logfile}.log')
 
-    # Configure logging first
+def setup_logging(log_file_path):
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s [%(levelname)s]: %(message)s',
         handlers=[logging.StreamHandler(), logging.FileHandler(log_file_path)]
     )
 
-    # Log the configuration settings
-    #logging.info("Logging configuration settings:")
+def log_configuration_settings():
     logging.info(f"Log level: {logging.getLevelName(logging.getLogger().getEffectiveLevel())}")
+    logging.info(f"Script File Path: {get_script_directory()}")
 
-    #handlers = logging.getLogger().handlers
-    #if handlers:
-    #    logging.info("Handlers:")
-    #    for handler in handlers:
-    #        logging.info(f"- {handler}")
-    #else:
-    #    logging.info("No handlers configured.")
-
-    # Now you can log additional messages
-    logging.info(f"Script File Path: {script_directory}")
-    logging.info(f"Log File Path: {log_file_path}")
-
+def configure_logging(logfile):
+    script_directory = get_script_directory()
+    log_file_path = generate_log_file_path(script_directory, logfile)
+    setup_logging(log_file_path)
+    log_configuration_settings()
     return log_file_path
 
+####### disconnect_all_active_connections & Helper functions
 def disconnect_all_active_connections(remote_path):
     try:
-        # Get all active connections
-        result = subprocess.run(['net', 'use'], capture_output=True, text=True)
-
-        # Check the return code
+        result = execute_subprocess_command(['net', 'use'], "Getting active connections")
         if result.returncode == 0:
-            # Parse the output to get drive letters of active connections to the specified remote path
-            active_connections = [line.split()[1] for line in result.stdout.splitlines() if line.strip() and remote_path in line and not line.strip().endswith('\\IPC$')]
-
-            # Log information about all active connections
-            if active_connections:
-                for drive_letter in active_connections:
-                    logging.info(f"Active connection: Drive {drive_letter} connected to {remote_path} before disconnection")
-            else:
-                logging.info("No active connections found.")
-
-            # Disconnect each active connection
-            for drive_letter in active_connections:
-                disconnect_command = ['net', 'use', drive_letter, '/delete', '/yes']
-                subprocess.run(disconnect_command, capture_output=True)
-                logging.info(f"Disconnected drive {drive_letter}")
-
-            return True  # Disconnected all active connections
+            active_connections = parse_active_connections(result.stdout, remote_path)
+            log_active_connections(remote_path, active_connections)
+            disconnect_active_connections(active_connections)
+            return True
         else:
             logging.info(f"Error getting active connections: {result.stderr}")
-            return False  # An error occurred while getting active connections
+            return False
 
     except subprocess.CalledProcessError as e:
         logging.info(f"Error disconnecting active connections: {e}")
-        return False  # An exception occurred during the subprocess call
+        return False
 
     except subprocess.TimeoutExpired:
         logging.info(f"Timeout occurred while disconnecting active connections for {remote_path}")
-        return False  # Timeout occurred while disconnecting active connections
+        return False
 
-def map_network_drive(network_path, drive_letter):
+def parse_active_connections(output, remote_path):
+    return [line.split()[1] for line in output.splitlines() if line.strip() and remote_path in line and not line.strip().endswith('\\IPC$')]
+
+def log_active_connections(remote_path, active_connections):
+    if active_connections:
+        for drive_letter in active_connections:
+            logging.info(f"Active connection: Drive {drive_letter} connected to {remote_path} before disconnection")
+    else:
+        logging.info("No active connections found.")
+
+def disconnect_active_connections(active_connections):
+    for drive_letter in active_connections:
+        execute_subprocess_command(['net', 'use', drive_letter, '/delete', '/yes'], f"Disconnecting drive {drive_letter}")
+
+####### map_network_drive 
+def map_network_drive(network_path):
+    load_dotenv()
     username = os.getenv("Username")
     password = os.getenv("Password")
-
     try:
-            # Construct the net use command to map the network drive
-            check_command = ['net', 'use', drive_letter + ':', network_path, '/user:' + username, password]
-
-            # Run the net use command
-            result = subprocess.run(check_command, capture_output=True, text=True)
-
-            # Check the return code
-            if result.returncode == 0:
-                logging.info(f"Network drive {network_path} successfully mapped to {drive_letter}.")
-            else:
-                logging.info(f"Failed to map network drive {network_path} to {drive_letter}. Error: {result.stderr}")
-
+        # Construct the net use command to map the network drive
+        drive_letter = find_available_drive_letter()
+        command = ['net', 'use', drive_letter + ':', network_path, '/user:' + username, password]
+        result = execute_subprocess_command(command, f"Mapping network drive {network_path} to {drive_letter}")
+        # Check the return code
+        if result.returncode == 0:
+            logging.info(f"Network drive {network_path} successfully mapped to {drive_letter}.")
+        else:
+            logging.info(f"Failed to map network drive {network_path} to {drive_letter}. Error: {result.stderr}")
     except Exception as e:
         logging.info(f"An error occurred while mapping network drive {network_path}. Exception: {e}")
 
+####### find_available_drive_letter 
 def find_available_drive_letter():
-    net_use_output = subprocess.run(['net', 'use'], capture_output=True, text=True).stdout
-    #logging.info(f"Raw net use output:\n{net_use_output}")
+    try:
+        net_use_output = execute_subprocess_command(['net', 'use'], "Running 'net use' command to find available drive letters").stdout
+        used_drive_letters = set()
+        for line in net_use_output.split("\n")[2:]:
+            drive_info = line.split()
+            if len(drive_info) >= 2 and ':' in drive_info[1]:
+                used_drive_letters.add(drive_info[1][0])
+        for letter in reversed(string.ascii_uppercase):
+            if letter not in used_drive_letters:
+                return letter
+        return None
+    except Exception as e:
+        logging.info(f"An error occurred while finding available drive letter. Exception: {e}")
+        
+####### is_execution_day & is_last_working_day_of_month functions with helper functions
+def get_days_in_month():
+    Misc = read_config('Misc')
+    days_in_month = Misc['days_in_month']
+    if days_in_month is not None:
+        return int(days_in_month)
+    else:
+        logging.error("Missing 'days_in_month' key in Misc config.")
+        return None
 
-    used_drive_letters = set()
-
-    for line in net_use_output.split("\n")[2:]:
-        drive_info = line.split()
-        if len(drive_info) >= 2 and ':' in drive_info[1]:
-            used_drive_letters.add(drive_info[1][0])
-
-    for letter in reversed(string.ascii_uppercase):
-        if letter not in used_drive_letters:
-            return letter
-
-    return None
-
-def is_execution_day():
-    Misc = read_config("Misc")
-    executionday = int(Misc['weekday_end'])
-    current_day = datetime.datetime.now().weekday()
-    return current_day < executionday
+def calculate_last_working_day_of_month():
+    days_in_month = get_days_in_month()
+    if days_in_month is not None:
+        today = datetime.date.today()
+        next_month = today.replace(day=days_in_month) + datetime.timedelta(days=4)  # Jump to end of next month
+        return next_month - datetime.timedelta(days=next_month.day)  # Backtrack to last weekday
+    else:
+        return None
 
 def is_last_working_day_of_month():
     try:
-        Misc = read_config("Misc")
-        daysinmonth = int(Misc['days_in_month'])
-        today = datetime.date.today()
-        next_month = today.replace(day=daysinmonth) + datetime.timedelta(days=4)  # Jump to end of next month
-        last_working_day = next_month - datetime.timedelta(days=next_month.day)  # Backtrack to last weekday
-
-        logging.info(f"Today's date: {today}")
-        logging.info(f"Next month's date: {next_month}")
-        logging.info(f"Calculated last working day of the month: {last_working_day}")
-
-        return today == last_working_day
+        last_working_day = calculate_last_working_day_of_month()
+        if last_working_day:
+            logging.info(f"Calculated last working day of the month: {last_working_day}")
+            return datetime.date.today() == last_working_day
+        else:
+            return None
     except Exception as e:
         logging.error(f"An error occurred during date calculations: {e}")
         return None
+    
+def is_execution_day():
+    Misc = read_config('Misc')
+    weekday_end = int(Misc['weekday_end'])
+    if weekday_end is not None:
+        current_day = datetime.datetime.now().weekday()
+        return current_day < weekday_end
+    return None
 
-def execute_vbox_command(command, log_message):
+####### manage_vm_action & get_vm_state & helper functions
+def manage_vm_action(vm_name, action):
     try:
-        logging.info(log_message)
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        logging.info(f"{log_message} completed successfully.")
-        return result
-    except Exception as e:
-        raise  # Re-raise the exception to pass it back to the caller
-
-def manage_vm_power(vm_name, action):
-    try:
-        if action == VMAction.POWER_OFF:
-            command = [VM.VBOX_MANAGE.value, "controlvm", vm_name, VMAction.POWER_OFF.value]
-            log_message = f"Powering off {vm_name}..."
-        elif action == VMAction.START_HEADLESS:
-            command = [VM.VBOX_MANAGE.value, 'startvm', vm_name, '--type', 'headless']
-            log_message = f"Powering On {vm_name} in headless mode..."
-        else:
-            logging.critical(f"Error: Invalid action '{action}'. Supported actions are 'power_off' and 'start_headless'.")
-            return False
-
-        execute_vbox_command(command, log_message)
-        return True 
-     
+        command, log_message = build_command_and_log_message(vm_name, action)
+        execute_subprocess_command(command, log_message)
+        return True
     except subprocess.CalledProcessError as e:
         if "returned non-zero exit status 1" in str(e):
             vm_state = get_vm_state(vm_name)
@@ -331,18 +352,51 @@ def manage_vm_power(vm_name, action):
             logging.info(f"Error: {e.stderr}")
         return False
 
+def build_command_and_log_message(vm_name, action):
+    if action == VMAction.POWER_OFF:
+        command = [VM.VBOX_MANAGE.value, "controlvm", vm_name, "poweroff"]
+        log_message = f"Powering off {vm_name}..."
+    elif action == VMAction.START_HEADLESS:
+        command = [VM.VBOX_MANAGE.value, 'startvm', vm_name, '--type', 'headless']
+        log_message = f"Powering On {vm_name} in headless mode..."
+    else:
+        handle_invalid_action(action)
+    return command, log_message
+
+def handle_invalid_action(action):
+    logging.critical(f"Error: Invalid action '{action}'. Supported actions are 'power_off' and 'start_headless'.")
+    raise ValueError("Invalid action")
+
 def get_vm_state(vm_name):
     try:
-        command = ["VBoxManage", "showvminfo", vm_name, "--machinereadable"]
-        result = execute_vbox_command(command, f"Getting state of VM '{vm_name}'...")
-        vm_state = result.stdout.splitlines()
-        for line in vm_state:
-            if line.startswith("VMState="):
-                state = line.split("=")[1].strip('"')
-                return state
+        command = build_showvminfo_command(vm_name)
+        result = execute_subprocess_command(command, f"Getting state of VM '{vm_name}'...")
+        vm_state = extract_vm_state(result)
+        return vm_state
     except Exception as e:
         logging.error(f"Error while getting state of VM '{vm_name}': {e}")
+        return "UNKNOWN"
+
+def build_showvminfo_command(vm_name):
+    return [VM.VBOX_MANAGE.value, "showvminfo", vm_name, "--machinereadable"]
+
+def execute_subprocess_command(command, log_message):
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        logging.info(log_message)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        raise e
+
+def extract_vm_state(stdout):
+    vm_state_lines = stdout.splitlines()
+    for line in vm_state_lines:
+        if line.startswith("VMState="):
+            return line.split("=")[1].strip('"')
     return "UNKNOWN"
+
+
+
 
 def backup_management(Paths, vm_name, state):
     BackupDetails = read_config("BackupDetails")
@@ -441,7 +495,7 @@ def backup_vm(vm_name, daily_backup_path, monthly_backup_path=None):
 
         daily_export_command = [VM.VBOX_MANAGE.value, "export", vm_name, f"--output={daily_output_path}", "--ovf20", "--options", "manifest", "--options", "nomacs"]
 
-        execute_vbox_command(daily_export_command, f"Backing up VM '{vm_name}' to '{daily_output_path}'.")
+        execute_subprocess_command(daily_export_command, f"Backing up VM '{vm_name}' to '{daily_output_path}'.")
 
         logging.info("Export process completed.")
 
@@ -527,18 +581,18 @@ def manage_snapshot(vm_name, snapshot_name, action):
         if action == SnapshotAction.LIST:
             command = [VM.VBOX_MANAGE.value, "snapshot", vm_name, SnapshotAction.LIST.value, "--machinereadable"]
             log_message = f"Checking snapshots for {vm_name}..."
-            result = execute_vbox_command(command, log_message)
+            result = execute_subprocess_command(command, log_message)
             lines = result.stdout.split('\n')
             snapshot_lines = [line for line in lines if re.search(SnapshotAction.SNAPSHOT_PATTERN.value, line)]
             return '\n'.join(snapshot_lines)
         elif action == SnapshotAction.TAKE:
             command = [VM.VBOX_MANAGE.value, "snapshot", vm_name, SnapshotAction.TAKE.value, snapshot_name]
             log_message = f"Taking {vm_name} snapshot '{snapshot_name}'..."
-            execute_vbox_command(command, log_message)
+            execute_subprocess_command(command, log_message)
         elif action == SnapshotAction.DELETE:
             command = [VM.VBOX_MANAGE.value, "snapshot", vm_name, SnapshotAction.DELETE.value, snapshot_name]
             log_message = f"Deleting snapshot '{snapshot_name}'..."
-            execute_vbox_command(command, log_message)
+            execute_subprocess_command(command, log_message)
         else:
             logging.critical(f"Unsupported action: {action}")
     except subprocess.CalledProcessError as e:
