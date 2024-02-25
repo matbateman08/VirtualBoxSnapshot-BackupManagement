@@ -84,6 +84,9 @@ def execute_subprocess_command(command, log_message=None):
 def get_script_directory():
     return os.path.dirname(os.path.abspath(__file__))
 
+def create_directories(directory):
+    os.makedirs(directory, exist_ok=True)
+
 def file_exists(file):
     script_dir = get_script_directory()
     file_path = os.path.join(script_dir, file)
@@ -201,11 +204,12 @@ def read_config(section_name):
     except Exception as e:
         logging.error(f"Error reading config file: {e}")
         return None
+
 ####### configure_logging & Helper Functions 
 def generate_log_file_path(script_directory, logfile):
     today_date = datetime.date.today().strftime("%Y-%m-%d")
     logs_folder = os.path.join(script_directory, 'logs', logfile)
-    os.makedirs(logs_folder, exist_ok=True)
+    create_directories(logs_folder)
     return os.path.join(logs_folder, f'{today_date}_{logfile}.log')
 
 def setup_logging(log_file_path):
@@ -391,9 +395,7 @@ def extract_vm_state(stdout):
             return line.split("=")[1].strip('"')
     return "UNKNOWN"
 
-
-
-
+####### manage_vm_action & get_vm_state & helper functions
 def backup_management(Paths, vm_name, state):
     BackupDetails = read_config("BackupDetails")
     
