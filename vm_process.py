@@ -70,6 +70,19 @@ def main():
 
 ####### execute_subprocess_command
 def execute_subprocess_command(command, log_message):
+    """
+    Execute a subprocess command.
+
+    Parameters:
+        command (list): List containing the command and its arguments.
+        log_message (str): Message to log before executing the command.
+
+    Returns:
+        CompletedProcess: An object representing the completed process.
+
+    Raises:
+        subprocess.CalledProcessError: If the subprocess exits with a non-zero return code.
+    """
     try:
         logging.info(log_message)
         result = subprocess.run(command, capture_output=True, text=True, check=True)
@@ -334,6 +347,7 @@ def read_config(section_name):
         logging.error(f"Error reading config file: {e}")
         return None
 
+
 ####### configure_logging & Helper Functions 
 def generate_log_file_path(script_directory, logfile):
     """
@@ -348,6 +362,7 @@ def generate_log_file_path(script_directory, logfile):
     """
     today_date = datetime.date.today().strftime("%Y-%m-%d")
     logs_folder = os.path.join(script_directory, 'logs', logfile)
+    create_directories(logs_folder)
     create_directories(logs_folder)
     return os.path.join(logs_folder, f'{today_date}_{logfile}.log')
 
