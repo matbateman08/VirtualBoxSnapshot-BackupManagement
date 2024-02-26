@@ -37,63 +37,117 @@ class BackupType(Enum):
     MONTHLY_NAS = "nas_monthly_path"
 
 def main():
-    #log_file_path = configure_logging("vmmaintenance")
-    #generate_config_from_script()
-    #setup_environment_variables()
-    #try:
-    #    if is_execution_day():
-    Paths = read_config("Paths")
-    #disconnect_all_active_connections(Paths['nas_path'])
-    #drive_letter = find_available_drive_letter()
-    #map_network_drive(Paths['nas_path'], drive_letter)
-    os.chdir(Paths['virtual_box_path'])
-    configure_logging("vmmaintenance")
-    VMDetails = read_config("VMDetails")
-    vm_names_section = VMDetails['vm_names']
-    for vm_name in vm_names_section.split(','):
-        vm_name = vm_name.strip()
-        manage_vm_action(vm_name, VMAction.POWER_OFF)
-    #            create_snapshot(vm_name)
-    #            backup_management(Paths, vm_name, "Create")
-    #    manage_vm_action(vm_name, VMAction.START_HEADLESS)
-    #        backup_management(Paths, vm_name, "Backup")                
-    #        send_log_email(log_file_path)
-    #        disconnect_all_active_connections(Paths['nas_path'])
-    #    else:
-    #        logging.info("Not running the script today.")
-    #except Exception as e:
-    #    logging.critical(f"Error encountered: {e}")
+    log_file_path = configure_logging("vmmaintenance")
+    generate_config_from_script()
+    setup_environment_variables()
+    try:
+        if is_execution_day():
+            Paths = read_config("Paths")
+            daily_backup_paths, monthly_backup_paths = get_backup_paths()
+            disconnect_all_active_connections(Paths['nas_path'])
+            map_network_drive(Paths['nas_path'])
+            os.chdir(Paths['virtual_box_path'])
+            configure_logging("vmmaintenance")
+            VMDetails = read_config("VMDetails")
+            vm_names_section = VMDetails['vm_names']
+            for vm_name in vm_names_section.split(','):
+                vm_name = vm_name.strip()
+                manage_vm_action(vm_name, VMAction.POWER_OFF)
+                create_snapshot(vm_name)
+                #export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
+                copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
+                manage_snapshot_retention(vm_name)
+                manage_vm_action(vm_name, VMAction.START_HEADLESS)
+            copy_backups(Paths['vm_management_source_path'], Paths['nas_misc_path'])
+            copy_backups(Paths['vm_management_source_path'], Paths['office365_misc_path'])
+            perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
+            disconnect_all_active_connections(Paths['nas_path'])
+            send_log_email(log_file_path) 
+        else:
+            logging.info("Not running the script today.")       
+    except Exception as e:
+        logging.critical(f"Error encountered: {e}")
 
 ####### execute_subprocess_command
-def execute_subprocess_command(command, log_message=None):
+def execute_subprocess_command(command, log_message):
     try:
-        if log_message:
-            logging.info(log_message)
+        logging.info(log_message)
         result = subprocess.run(command, capture_output=True, text=True, check=True)
-        if log_message:
-            logging.info(f"{log_message} completed successfully.")
-            return True, result.stdout
-        else:
-            return result.stdout
+        logging.info(f"{log_message} completed successfully.")
+        return result
     except subprocess.CalledProcessError as e:
-        if log_message:
-            logging.error(f"Error: {e.stderr}")
-        raise  # Re-raise the exception to pass it back to the caller
+        logging.error(f"{log_message} failed with return code {e.returncode}.")
+        logging.error(f"Command output: {e.output}")
+        raise
+    except Exception as e:
+        logging.exception(f"An error occurred during execution: {e}")
+        raise
 
 ####### These two functions are used across setup_environment_variables and generate_log_file_path
+def get_script():
+    """
+    Get the absolute path of the current script.
+
+    Returns:
+        str: The absolute path of the current script.
+    """
+    return os.path.abspath(__file__) 
+
 def get_script_directory():
+    """
+    Get the directory of the current script.
+
+    Returns:
+        str: The directory path of the current script.
+    """
     return os.path.dirname(os.path.abspath(__file__))
 
+def create_directories(directory):
+    """
+    Create directories if they don't exist.
+
+    Args:
+        directory (str): The directory path to be created.
+    """
+    os.makedirs(directory, exist_ok=True)
+
 def file_exists(file):
+    """
+    Check if a file exists in the script directory.
+
+    Args:
+        file (str): The name of the file to check.
+
+    Returns:
+        bool: True if the file exists, False otherwise.
+    """
     script_dir = get_script_directory()
     file_path = os.path.join(script_dir, file)
     return os.path.exists(file_path)
 
 ####### Setup_environment_variables & Helper Functions 
 def find_used_env_vars(script_content):
+    """
+    Find used environment variables in the script content.
+
+    Args:
+        script_content (str): The content of the script.
+
+    Returns:
+        set: A set containing the names of environment variables used in the script.
+    """
     return set(re.findall(r"os\.getenv\(['\"]([^'\"]+)['\"]\)", script_content))
 
 def get_env_values(used_env_vars):
+    """
+    Prompt the user to provide values for the given environment variables.
+
+    Args:
+        used_env_vars (set): A set containing the names of environment variables.
+
+    Returns:
+        dict: A dictionary containing environment variable names as keys and their corresponding values.
+    """
     env_values = {}
     logging.info("Please provide values for the following environment variables:")
     for env_var in used_env_vars:
@@ -102,6 +156,16 @@ def get_env_values(used_env_vars):
     return env_values
 
 def write_env_file(env_file, env_values):
+    """
+    Write environment variables and their values to a file.
+
+    Args:
+        env_file (str): The path to the environment file.
+        env_values (dict): A dictionary containing environment variable names and their values.
+
+    Returns:
+        bool: True if writing to the file was successful, False otherwise.
+    """
     try:
         with open(env_file, 'w') as f:
             for env_var, value in env_values.items():
@@ -110,12 +174,21 @@ def write_env_file(env_file, env_values):
     except Exception as e:
         logging.error(f"Error writing to {env_file}: {e}")
         return False
-
+    
 def setup_environment_variables():
+    """
+    Setup environment variables based on the script content.
+
+    This function checks for the existence of a .env file. If found, it outputs a message saying it exists.
+    If not found, it prompts the user to provide values for environment variables used in the script content,
+    then creates a .env file.
+    """
     env_file = '.env'
-    if not file_exists(env_file):
+    if file_exists(env_file):
+        logging.info(f"The .env file '{env_file}' already exists.")
+    else:
         logging.info("No .env file found. Let's set it up.")
-        script_path = get_script_directory()
+        script_path = get_script()
         with open(script_path, 'r') as script_file:
             script_content = script_file.read()
         used_env_vars = find_used_env_vars(script_content)
@@ -128,6 +201,15 @@ def setup_environment_variables():
 
 ####### Generate_Config_from_Script & Helper Functions 
 def parse_config_from_script(script_path):
+    """
+    Parse configuration settings from a script.
+
+    Args:
+        script_path (str): The path to the script containing configuration settings.
+
+    Returns:
+        dict: A dictionary containing parsed configuration settings.
+    """
     try:
         with open(script_path, 'r') as file:
             script_lines = file.readlines()
@@ -140,11 +222,20 @@ def parse_config_from_script(script_path):
                         combined_key = header + "['" + path + "']"
                         section_paths[combined_key] = path
             return section_paths
-    except FileNotFoundError:
-        logging.info(f"File '{script_path}' not found.")
+    except Exception as e:
+        logging.error(f"Error occurred while parsing script: {e}")
         return {}
 
 def format_section_paths(section_paths):
+    """
+    Format parsed section paths.
+
+    Args:
+        section_paths (dict): Parsed section paths.
+
+    Returns:
+        dict: Formatted section paths.
+    """
     formatted_output = {}
     for key, value in section_paths.items():
         prefix = key.split("['")[0]
@@ -155,8 +246,17 @@ def format_section_paths(section_paths):
     return formatted_output
 
 def get_user_input(formatted_output):
+    """
+    Get user input for configuration settings.
+
+    Args:
+        formatted_output (dict): Formatted section paths.
+
+    Returns:
+        configparser.ConfigParser or None: Configuration settings obtained from user input.
+    """
     config = configparser.ConfigParser()
-    if not file_exists('config.ini'):
+    if not os.path.exists('config.ini'):
         for prefix, items in formatted_output.items():
             config[prefix] = {}
             for key, value in items.items():
@@ -170,45 +270,94 @@ def get_user_input(formatted_output):
         return None
 
 def write_config_to_file(config):
+    """
+    Write configuration settings to a file.
+
+    Args:
+        config (configparser.ConfigParser): Configuration settings to be written to file.
+    """
     if config:
         with open('config.ini', 'w') as configfile:
             config.write(configfile)
 
 def generate_config_from_script():
+    """
+    Generate configuration settings from a script.
+    """
     script_path = get_script_directory()
     section_paths = parse_config_from_script(script_path)
     formatted_output = format_section_paths(section_paths)
     config = get_user_input(formatted_output)
     write_config_to_file(config)
+
 ####### read_config & Helper Functions
 def read_config_section(config, section_name):
+    """
+    Read a specific section from the configuration.
+
+    Args:
+        config (configparser.ConfigParser): Configuration object.
+        section_name (str): Name of the section to read.
+
+    Returns:
+        dict or None: Contents of the specified section if found, else None.
+    """
     if section_name not in config:
         logging.critical(f"Error: Section {section_name} does not exist in the config file")
         return None
     return config[section_name]
 
 def read_config(section_name):
-    config_file_path = os.path.join(get_script_directory(), 'config.ini')
+    """
+    Read configuration settings from a file.
 
-    if not file_exists(config_file_path):
+    Args:
+        section_name (str): Name of the section to read from the config file.
+
+    Returns:
+        dict or None: Configuration settings from the specified section if found, else None.
+    """
+    config_file_path = os.path.join(get_script_directory(), 'config.ini')
+    if not os.path.exists(config_file_path):
         logging.critical(f"Error: Config file does not exist at {config_file_path}")
         return None
     try:
         config = configparser.ConfigParser()
         config.read(config_file_path)
+        if section_name not in config:
+            logging.error(f"Error: Section '{section_name}' not found in config file.")
+            return None
+
         section_data = dict(config[section_name])
         return section_data
     except Exception as e:
         logging.error(f"Error reading config file: {e}")
         return None
+
 ####### configure_logging & Helper Functions 
 def generate_log_file_path(script_directory, logfile):
+    """
+    Generate the path for the log file.
+
+    Args:
+        script_directory (str): Path to the script directory.
+        logfile (str): Name of the log file.
+
+    Returns:
+        str: Path to the log file.
+    """
     today_date = datetime.date.today().strftime("%Y-%m-%d")
     logs_folder = os.path.join(script_directory, 'logs', logfile)
-    os.makedirs(logs_folder, exist_ok=True)
+    create_directories(logs_folder)
     return os.path.join(logs_folder, f'{today_date}_{logfile}.log')
 
 def setup_logging(log_file_path):
+    """
+    Setup logging configuration.
+
+    Args:
+        log_file_path (str): Path to the log file.
+    """
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s [%(levelname)s]: %(message)s',
@@ -216,10 +365,20 @@ def setup_logging(log_file_path):
     )
 
 def log_configuration_settings():
+    """Log configuration settings."""
     logging.info(f"Log level: {logging.getLevelName(logging.getLogger().getEffectiveLevel())}")
     logging.info(f"Script File Path: {get_script_directory()}")
 
 def configure_logging(logfile):
+    """
+    Configure logging.
+
+    Args:
+        logfile (str): Name of the log file.
+
+    Returns:
+        str: Path to the log file.
+    """
     script_directory = get_script_directory()
     log_file_path = generate_log_file_path(script_directory, logfile)
     setup_logging(log_file_path)
@@ -228,6 +387,15 @@ def configure_logging(logfile):
 
 ####### disconnect_all_active_connections & Helper functions
 def disconnect_all_active_connections(remote_path):
+    """
+    Disconnect all active connections to a remote path.
+
+    Args:
+        remote_path (str): The remote path to disconnect active connections from.
+
+    Returns:
+        bool: True if disconnection was successful, False otherwise.
+    """
     try:
         result = execute_subprocess_command(['net', 'use'], "Getting active connections")
         if result.returncode == 0:
@@ -248,9 +416,26 @@ def disconnect_all_active_connections(remote_path):
         return False
 
 def parse_active_connections(output, remote_path):
+    """
+    Parse active connections from the output of 'net use' command.
+
+    Args:
+        output (str): Output of the 'net use' command.
+        remote_path (str): The remote path to filter active connections.
+
+    Returns:
+        list: List of active connections matching the remote path.
+    """
     return [line.split()[1] for line in output.splitlines() if line.strip() and remote_path in line and not line.strip().endswith('\\IPC$')]
 
 def log_active_connections(remote_path, active_connections):
+    """
+    Log active connections.
+
+    Args:
+        remote_path (str): The remote path.
+        active_connections (list): List of active connections.
+    """
     if active_connections:
         for drive_letter in active_connections:
             logging.info(f"Active connection: Drive {drive_letter} connected to {remote_path} before disconnection")
@@ -258,14 +443,29 @@ def log_active_connections(remote_path, active_connections):
         logging.info("No active connections found.")
 
 def disconnect_active_connections(active_connections):
+    """
+    Disconnect active connections.
+
+    Args:
+        active_connections (list): List of active connections to disconnect.
+    """
     for drive_letter in active_connections:
         execute_subprocess_command(['net', 'use', drive_letter, '/delete', '/yes'], f"Disconnecting drive {drive_letter}")
 
 ####### map_network_drive 
 def map_network_drive(network_path):
+    """
+    Map a network drive.
+
+    Args:
+        network_path (str): The network path to map.
+
+    Raises:
+        Exception: If an error occurs during the process.
+    """
     load_dotenv()
-    username = os.getenv("Username")
-    password = os.getenv("Password")
+    username = os.getenv("NASUsername")
+    password = os.getenv("NASPassword")
     try:
         # Construct the net use command to map the network drive
         drive_letter = find_available_drive_letter()
@@ -281,6 +481,12 @@ def map_network_drive(network_path):
 
 ####### find_available_drive_letter 
 def find_available_drive_letter():
+    """
+    Find an available drive letter.
+
+    Returns:
+        str: Available drive letter.
+    """
     try:
         net_use_output = execute_subprocess_command(['net', 'use'], "Running 'net use' command to find available drive letters").stdout
         used_drive_letters = set()
@@ -297,6 +503,12 @@ def find_available_drive_letter():
         
 ####### is_execution_day & is_last_working_day_of_month functions with helper functions
 def get_days_in_month():
+    """
+    Get the number of days in the month from the configuration.
+
+    Returns:
+        int or None: Number of days in the month if available, None otherwise.
+    """
     Misc = read_config('Misc')
     days_in_month = Misc['days_in_month']
     if days_in_month is not None:
@@ -306,6 +518,12 @@ def get_days_in_month():
         return None
 
 def calculate_last_working_day_of_month():
+    """
+    Calculate the last working day of the month.
+
+    Returns:
+        datetime.date or None: Last working day of the month if available, None otherwise.
+    """
     days_in_month = get_days_in_month()
     if days_in_month is not None:
         today = datetime.date.today()
@@ -315,6 +533,12 @@ def calculate_last_working_day_of_month():
         return None
 
 def is_last_working_day_of_month():
+    """
+    Check if today is the last working day of the month.
+
+    Returns:
+        bool or None: True if today is the last working day of the month, False if not, None if unable to determine.
+    """
     try:
         last_working_day = calculate_last_working_day_of_month()
         if last_working_day:
@@ -327,6 +551,12 @@ def is_last_working_day_of_month():
         return None
     
 def is_execution_day():
+    """
+    Check if today is an execution day based on configuration.
+
+    Returns:
+        bool or None: True if today is an execution day, False if not, None if unable to determine.
+    """
     Misc = read_config('Misc')
     weekday_end = int(Misc['weekday_end'])
     if weekday_end is not None:
@@ -336,6 +566,16 @@ def is_execution_day():
 
 ####### manage_vm_action & get_vm_state & helper functions
 def manage_vm_action(vm_name, action):
+    """
+    Perform an action on a virtual machine.
+
+    Args:
+        vm_name (str): The name of the virtual machine.
+        action (str): The action to perform on the virtual machine.
+
+    Returns:
+        bool: True if the action was successful, False otherwise.
+    """
     try:
         command, log_message = build_command_and_log_message(vm_name, action)
         execute_subprocess_command(command, log_message)
@@ -353,6 +593,16 @@ def manage_vm_action(vm_name, action):
         return False
 
 def build_command_and_log_message(vm_name, action=None):
+    """
+    Build command and log message for managing VM action.
+
+    Args:
+        vm_name (str): The name of the virtual machine.
+        action (str): The action to perform on the virtual machine.
+
+    Returns:
+        tuple: A tuple containing the command and log message.
+    """
     if action == VMAction.POWER_OFF:
         command = [VM.VBOX_MANAGE.value, "controlvm", vm_name, "poweroff"]
         log_message = f"Powering off {vm_name}..."
@@ -367,10 +617,28 @@ def build_command_and_log_message(vm_name, action=None):
     return command, log_message
 
 def handle_invalid_action(action):
+    """
+    Handle invalid action.
+
+    Args:
+        action (str): The invalid action.
+
+    Raises:
+        ValueError: If the action is invalid.
+    """
     logging.critical(f"Error: Invalid action '{action}'. Supported actions are 'power_off' and 'start_headless'.")
     raise ValueError("Invalid action")
 
 def get_vm_state(vm_name):
+    """
+    Get the state of a virtual machine.
+
+    Args:
+        vm_name (str): The name of the virtual machine.
+
+    Returns:
+        str: The state of the virtual machine.
+    """
     try:
         command, log_message = build_command_and_log_message(vm_name, VMAction.SHOW_STATE)
         success, result = execute_subprocess_command(command, log_message)  # Capture both return values
@@ -385,239 +653,252 @@ def get_vm_state(vm_name):
         return "UNKNOWN"
 
 def extract_vm_state(stdout):
+    """
+    Extract the state of a virtual machine from the command output.
+
+    Args:
+        stdout (str): The command output.
+
+    Returns:
+        str: The state of the virtual machine.
+    """
     vm_state_lines = stdout.splitlines()
     for line in vm_state_lines:
         if line.startswith("VMState="):
             return line.split("=")[1].strip('"')
     return "UNKNOWN"
 
+########## Get backup paths
+def get_backup_paths():
+    """
+    Parses backup paths from paths data and creates directories if they don't exist.
 
-
-
-def backup_management(Paths, vm_name, state):
-    BackupDetails = read_config("BackupDetails")
-    
-    daily_retention = int(BackupDetails['daily_retention'])
-    monthly_retention = int(BackupDetails['monthly_retention'])
+    Returns:
+        tuple: A tuple containing dictionaries for daily backup paths and monthly backup paths.
+    """
+    Paths = read_config("Paths")
 
     daily_backup_paths = {
-        BackupType.DAILY_LOCAL: Paths['source_daily_backup_path'],
-        BackupType.DAILY_OFFICE365: Paths['office365_daily_path'],
-        BackupType.DAILY_NAS: Paths['nas_daily_path']
+        'DAILY_LOCAL': Paths.get('source_daily_backup_path', ''),
+        'DAILY_OFFICE365': Paths.get('office365_daily_path', ''),
+        'DAILY_NAS': Paths.get('nas_daily_path', '')
     }
 
     monthly_backup_paths = {
-        BackupType.MONTHLY_LOCAL: Paths['source_monthly_backup_path'],
-        BackupType.MONTHLY_OFFICE365: Paths['office365_monthly_path'],
-        BackupType.MONTHLY_NAS: Paths['nas_monthly_path']
+        'MONTHLY_LOCAL': Paths.get('source_monthly_backup_path', ''),
+        'MONTHLY_OFFICE365': Paths.get('office365_monthly_path', ''),
+        'MONTHLY_NAS': Paths.get('nas_monthly_path', '')
     }
 
-    try:
-        if state == "Create":
-            logging.info("Create the backu")
-            create_backup_directories(*daily_backup_paths.values())
-            create_backup_directories(*monthly_backup_paths.values())
+    for path in daily_backup_paths.values():
+        create_directories(path)
+    
+    for path in monthly_backup_paths.values():
+        create_directories(path)
 
-            logging.info(f"Backup Management - VM Name: {vm_name}")
-            logging.info(f"Daily Retention: {daily_retention}")
-            logging.info(f"Monthly Retention: {monthly_retention}")
+    return daily_backup_paths, monthly_backup_paths
 
-            backup_vm(vm_name, daily_backup_paths[BackupType.DAILY_LOCAL])
+########## Export VM
+def export_vm(vm_name, daily_backup_path):
+    """
+    Export a Virtual Machine to the specified daily backup path.
 
-        elif state == "Backup":
-            logging.info("Copying Files to Office365 & NAS")
-            for backup_type, backup_path in daily_backup_paths.items():
-                if backup_type not in [BackupType.DAILY_LOCAL, BackupType.MONTHLY_LOCAL]:
-                    copy_backups(Paths['source_daily_backup_path'], backup_path)
-
-            if is_last_working_day_of_month():
-                for backup_type, backup_path in monthly_backup_paths.items():
-                    if backup_type not in [BackupType.DAILY_LOCAL, BackupType.MONTHLY_LOCAL]:
-                        logging.info("It is the last day of the month, so copying this month's backup.")
-                        copy_backups(Paths['source_daily_backup_path'], backup_path)
-
-            for backup_type, backup_path in daily_backup_paths.items():
-                cleanup_files(backup_path, daily_retention)
-
-            if is_last_working_day_of_month():
-                for backup_type, backup_path in monthly_backup_paths.items():
-                    logging.info("It is the last day of the month, so performing the cleanup on the monthly backups.")
-                    cleanup_files(backup_path, monthly_retention)
-
-            log_location = Paths['logs_location']
-            copy_vm_management(Paths)
-            logging.info(f"Cleaning up: {log_location} with retention policy of: {daily_retention}")
-            cleanup_files(log_location, daily_retention)
-
-    except subprocess.CalledProcessError as e:
-        error_message = e.stderr if e.stderr else e.output
-        if "returned non-zero exit status 1." in error_message and "VM has already been exported" not in error_message:
-            logging.info("The virtual machine has already been exported.")
-    except Exception as e:
-        logging.error(f"An error occurred during backup management: {e}")
-
-def copy_backups(src_path, dest_path):
-    logging.info(f"Creating and copying backups from '{src_path}' to '{dest_path}'.")
-    try:
-        for root, dirs, files in os.walk(src_path):
-            for file in files:
-                src_file_path = os.path.join(root, file)
-                dest_file_path = os.path.join(dest_path, file)
-
-                if not os.path.exists(dest_file_path):
-                    shutil.copy2(src_file_path, dest_file_path)
-                    logging.info(f"File '{file}' copied successfully.")
-                else:
-                    logging.warning(f"File '{file}' already exists in '{dest_path}', skipping.")
-
-        logging.info(f"Backups copied successfully from '{src_path}' to '{dest_path}'.")
-    except Exception as e:
-        logging.error(f"Error copying backups: {e}")
-
-def create_backup_directories(*paths):
-    try:
-        for path in paths:
-            if not os.path.exists(path):
-                os.makedirs(path)
-                logging.info(f"Created directory: {path}")
-    except Exception as e:
-        logging.error(f"An error occurred during directory creation: {e}")
-
-def backup_vm(vm_name, daily_backup_path, monthly_backup_path=None):
+    Parameters:
+        vm_name (str): Name of the Virtual Machine to export.
+        daily_backup_path (str): Path to the daily backup destination.
+    """
     try:
         logging.info(f"Initiating backup for VM '{vm_name}'.")
         base_filename = f"{vm_name}_{datetime.date.today().strftime('%Y-%m-%d')}"
         daily_output_path = os.path.join(daily_backup_path, f"{base_filename}.ova")
-
         daily_export_command = [VM.VBOX_MANAGE.value, "export", vm_name, f"--output={daily_output_path}", "--ovf20", "--options", "manifest", "--options", "nomacs"]
-
         execute_subprocess_command(daily_export_command, f"Backing up VM '{vm_name}' to '{daily_output_path}'.")
-
         logging.info("Export process completed.")
-
     except Exception as e:
         raise
 
-def cleanup_files(backup_path, max_age_days):
+########## Copying files based on dates
+def copy_backups_based_on_date(is_last_day, source_path, daily_paths, monthly_paths):
+    """
+    Copy backups based on the date condition.
+
+    Parameters:
+        is_last_day (bool): Whether it's the last day of the month.
+        source_path (str): Source path for backup.
+        daily_paths (dict): Dictionary containing daily destination paths.
+        monthly_paths (dict): Dictionary containing monthly destination paths.
+    """
+    if not is_last_day:
+        copy_backups(source_path, daily_paths)
+    else:
+        copy_backups(source_path, daily_paths)
+        copy_backups(source_path, monthly_paths)
+
+def copy_backups(source_path, paths):
+    """
+    Copy backups from source path to destination paths.
+
+    Parameters:
+        source_path (str): Source path for backup.
+        paths (dict): Dictionary containing destination paths for different backup types.
+    """
+    for destination_key, destination_value in paths.items():
+        if source_path == destination_value:
+            logging.info(f"Source path {source_path} is the same as destination path {destination_value}. Skipping copying.")
+            continue
+        file_copy(source_path, destination_value)
+        logging.info(f"Files copied from {source_path} to {destination_value}.")
+
+def file_copy(source_path, destination_path):
+    """
+    Copy files from source_path to destination_path.
+
+    Parameters:
+        source_path (str): Path to the source directory.
+        destination_path (str): Path to the destination directory.
+    """
     try:
-        logging.info(f"Cleaning up files in '{backup_path}' older than {max_age_days} days.")
+        files = os.listdir(source_path)
+        for file in files:
+            source_file = os.path.join(source_path, file)
+            destination_file = os.path.join(destination_path, file)
+            shutil.copy(source_file, destination_file)
+        logging.info(f"Files copied from {source_path} to {destination_path}.")
+    except Exception as e:
+        logging.error(f"Error copying files: {e}")
 
-        for root, dirs, files in os.walk(backup_path):
-            for filename in files:
-                try:
-                    file_path = os.path.join(root, filename)
-                    file_age = datetime.date.today() - datetime.date.fromtimestamp(os.path.getmtime(file_path))
-                    logging.info(f"Checking file '{filename}' with age {file_age.days} days.")
+########### File cleanup & helper functions
+def perform_cleanup_operations(is_last_day, daily_paths, monthly_paths):
+    """
+    Perform cleanup operations based on the date condition.
 
-                    if file_age.days >= max_age_days:
-                        os.remove(file_path)
-                        logging.info(f"Deleted file '{filename}'.")
-                except Exception as e:
-                    logging.error(f"An error occurred while processing file '{filename}': {str(e)}")
+    Parameters:
+        is_last_day (bool): Whether it's the last day of the month.
+        source_path (str): Source path for cleanup.
+        daily_paths (dict): Dictionary containing daily destination paths.
+        monthly_paths (dict): Dictionary containing monthly destination paths.
+    """
+    retention = read_config("BackupDetails")
+    if not is_last_day:  
+        cleanup_files_in_paths(daily_paths, retention.get('daily_retention', 0))
+    else:
+        cleanup_files_in_paths(daily_paths, retention.get('daily_retention', 0))
+        cleanup_files_in_paths(monthly_paths, retention.get('monthly_retention', 0))
 
+def cleanup_files_in_paths(paths, max_age_days):
+    """
+    Cleanup files in specified paths older than the given maximum age.
+
+    Parameters:
+        paths (dict): Dictionary containing paths for cleanup.
+        max_age_days (int): Maximum age (in days) of files to retain.
+    """
+    try:
+        for destination_path in paths.values():
+            logging.info(f"Cleaning up files in '{destination_path}' older than {max_age_days} days.")
+            for root, dirs, files in os.walk(destination_path):
+                for file_name in files:
+                    try:
+                        cleanup_file_path = file_path(root, file_name)
+                        cleanup_file_age = file_age(cleanup_file_path, file_name)
+                        if cleanup_file_age.days >= max_age_days:
+                            file_remove(cleanup_file_path, file_name)
+                    except Exception as e:
+                        logging.error(f"An error occurred while processing file '{file_name}': {str(e)}")
         logging.info("File cleanup process completed.")
-
     except Exception as e:
         logging.error(f"An error occurred during file cleanup: {str(e)}")
 
-def create_snapshot(vm_name):
-    current_date = datetime.datetime.now()
-    new_snapshot_name = f"Snapshot-{current_date.strftime('%d%m%y')}"
-    
-    try:
-        if not snapshot_exists(vm_name, new_snapshot_name):
-            manage_snapshot(vm_name, new_snapshot_name, SnapshotAction.TAKE)
-            snapshot_retention_management(vm_name)
-        else:
-            logging.info(f"Snapshot '{new_snapshot_name}' already exists for {vm_name}.")
-    except:
-        manage_snapshot(vm_name, new_snapshot_name, SnapshotAction.TAKE)
-        logging.info(f"There is no Snapshot for {vm_name}. We've just created one.")
+def file_path(root, file_name):
+    """
+    Concatenate root directory and file name to get the full file path.
 
-def snapshot_exists(vm_name, snapshot_name):
-    try:
-        result = manage_snapshot(vm_name, None, SnapshotAction.LIST)
-        snapshot_lines = [line for line in result.split('\n') if re.search(f'"{snapshot_name}"', line)]
-        logging.info(f"Was there a snapshot? {'Yes' if bool(snapshot_lines) else 'No'}")
-        return bool(snapshot_lines)
-    except subprocess.CalledProcessError as e:
-        logging.critical(f"Error: {e}")
-        return False
-        
-def snapshot_retention_management(vm_name):
-    SnapshotDetails = read_config("SnapshotDetails")
-    daily_retention = int(SnapshotDetails['daily_retention'])
-    try:
-        logging.info(f"Managing {vm_name} Snapshots retention...")
-        snapshots_info = manage_snapshot(vm_name, None, SnapshotAction.LIST)
-        if snapshots_info:
-            lines = snapshots_info.split('\n')
-            current_date = datetime.datetime.now()
+    Parameters:
+        root (str): Root directory.
+        file_name (str): File name.
 
-            for line in lines:
-                snapshot_name = re.search(SnapshotAction.SNAPSHOT_PATTERN.value, line)
-                if snapshot_name:
-                    snapshot_date_str = snapshot_name.group().split('-')[1]
-                    try:
-                        snapshot_date = datetime.datetime.strptime(snapshot_date_str, '%d%m%y')
-                        days_difference = (current_date - snapshot_date).days
-                        logging.info(f"Snapshot: {snapshot_name.group()}, Age: {days_difference} days")
-                        if days_difference > daily_retention:
-                            manage_snapshot(vm_name, snapshot_name.group(), SnapshotAction.DELETE)
-                            logging.info(f"Deleted snapshot: {snapshot_name}")
-                    except ValueError:
-                        logging.critical(f"Issue parsing date from Snapshot name: {snapshot_name.group()}")
-                        continue
-        logging.info(f"{vm_name}'s Snapshot retention management completed.")
+    Returns:
+        str: Full file path.
+    """
+    return os.path.join(root, file_name)
+
+def file_age(file_path, filename):
+    """
+    Calculate the age of the file in days.
+
+    Parameters:
+        file_path (str): Path to the file.
+        filename (str): Name of the file.
+
+    Returns:
+        datetime.timedelta: Age of the file.
+    """
+    file_age = datetime.date.today() - datetime.date.fromtimestamp(os.path.getmtime(file_path))
+    logging.info(f"Checking file '{filename}' with age {file_age.days} days.")
+    return file_age
+
+def file_remove(file_path, file_name):
+    """
+    Remove the specified file.
+
+    Parameters:
+        file_path (str): Path to the file.
+        file_name (str): Name of the file.
+    """
+    os.remove(file_path)
+    logging.info(f"Deleted file '{file_name}'.")
+
+############## Function that gets the log contents, loads it into an email and then sends the email
+def get_log_content(log_file_path):
+    """
+    Read the content of a log file.
+    Args:
+        log_file_path (str): The path to the log file.
+
+    Returns:
+        str: The content of the log file.
+    """
+    try:
+        with open(log_file_path, 'r') as log_file:
+            return ''.join(reversed(log_file.readlines()))
+    except FileNotFoundError as e:
+        logging.error(f"File not found error: {e}")
+        return None
+
+def send_email(subject, from_email, to_email, body, smtp_server, smtp_port, smtp_username, smtp_password):
+    """
+    Send an email.
+    Args:
+        subject (str): The subject of the email.
+        from_email (str): The sender's email address.
+        to_email (str): The recipient's email address.
+        body (str): The body/content of the email.
+        smtp_server (str): The SMTP server address.
+        smtp_port (int): The SMTP server port.
+        smtp_username (str): The SMTP username for authentication.
+        smtp_password (str): The SMTP password for authentication.
+    """
+    msg = MIMEMultipart()
+    msg['From'] = from_email
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+            server.sendmail(from_email, to_email, msg.as_string())
+        logging.info("Email sent successfully.")
     except Exception as e:
-        logging.critical(f"An unexpected error occurred: {e}")
-       
-def manage_snapshot(vm_name, snapshot_name, action):
-    try:
-        if action == SnapshotAction.LIST:
-            command = [VM.VBOX_MANAGE.value, "snapshot", vm_name, SnapshotAction.LIST.value, "--machinereadable"]
-            log_message = f"Checking snapshots for {vm_name}..."
-            result = execute_subprocess_command(command, log_message)
-            lines = result.stdout.split('\n')
-            snapshot_lines = [line for line in lines if re.search(SnapshotAction.SNAPSHOT_PATTERN.value, line)]
-            return '\n'.join(snapshot_lines)
-        elif action == SnapshotAction.TAKE:
-            command = [VM.VBOX_MANAGE.value, "snapshot", vm_name, SnapshotAction.TAKE.value, snapshot_name]
-            log_message = f"Taking {vm_name} snapshot '{snapshot_name}'..."
-            execute_subprocess_command(command, log_message)
-        elif action == SnapshotAction.DELETE:
-            command = [VM.VBOX_MANAGE.value, "snapshot", vm_name, SnapshotAction.DELETE.value, snapshot_name]
-            log_message = f"Deleting snapshot '{snapshot_name}'..."
-            execute_subprocess_command(command, log_message)
-        else:
-            logging.critical(f"Unsupported action: {action}")
-    except subprocess.CalledProcessError as e:
-        logging.critical(f"Error during snapshot operation: {e}")
-
-def copy_vm_management(Paths):
-    try:
-        source_path = Paths['vm_management_source_path']
-        destination_nas_path = Paths['nas_misc_path']
-        destination_office365_path = Paths['office365_misc_path']
-
-        # Create backup directories
-        create_backup_directories(destination_nas_path)
-        create_backup_directories(destination_office365_path)
-
-        # Copy the entire directory to NAS destination
-        shutil.copytree(source_path, os.path.join(destination_nas_path, os.path.basename(source_path)))
-        logging.info(f'Successfully copied {source_path} to NAS: {destination_nas_path}')
-
-        # Copy the entire directory to Office 365 destination
-        shutil.copytree(source_path, os.path.join(destination_office365_path, os.path.basename(source_path)))
-        logging.info(f'Successfully copied {source_path} to Office 365: {destination_office365_path}')
-
-    except FileNotFoundError:
-        logging.error(f'Error: Source directory not found - {source_path}')
-    except Exception as e:
-        logging.error(f'Error: {e}')
+        logging.error(f"An unexpected error occurred while sending email: {e}")
 
 def send_log_email(log_file_path):
+    """
+    Send log file content via email.
+    Args:
+        log_file_path (str): The path to the log file.
+    """
     try:
         SMTP = read_config("SMTP")
         smtp_server = SMTP["server"]
@@ -625,36 +906,183 @@ def send_log_email(log_file_path):
         smtp_password = os.getenv("email_password")
         from_email = os.getenv("email_from")
         to_email = os.getenv("email_to")
-        smtp_port = int(os.getenv("email_port"))
+        smtp_port = os.getenv("email_port")
 
         subject = f"Log file for {datetime.date.today().strftime('%Y-%m-%d')}"
 
-        # Read the content of the log file with the latest entries at the top
-        try:
-            with open(log_file_path, 'r') as log_file:
-                log_content = reversed(log_file.readlines())
-                log_content = ''.join(log_content)
-        except FileNotFoundError as e:
-            logging.error(f"File not found error: {e}")
-            return  # Stop further execution if file not found
-
-        # Prepare email
-        msg = MIMEMultipart()
-        msg['From'] = from_email
-        msg['To'] = to_email
-        msg['Subject'] = subject
-
-        # Attach log content
-        msg.attach(MIMEText(log_content, 'plain'))
-
-        # Connect to SMTP server and send email
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_username, smtp_password)
-            server.sendmail(from_email, to_email, msg.as_string())
-
+        log_content = get_log_content(log_file_path)
+        if log_content is not None:
+            send_email(subject, from_email, to_email, log_content, smtp_server, smtp_port, smtp_username, smtp_password)
+    
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
+
+############## Snapshot Management 
+def create_snapshot(vm_name):
+    """
+    Creates a snapshot for the specified virtual machine.
+
+    Parameters:
+        vm_name (str): The name of the virtual machine.
+
+    Returns:
+        None
+    """
+    new_snapshot_name = get_snapshot_name()
+    try:
+        if snapshot_exists(vm_name, new_snapshot_name):
+            logging.info(f"Snapshot '{new_snapshot_name}' already existed for {vm_name}.")
+        else:
+            logging.info(f"Snapshot '{new_snapshot_name}' didn't exist, so taking one for {new_snapshot_name} for {vm_name}.") 
+            manage_snapshot(vm_name, new_snapshot_name, SnapshotAction.TAKE)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error occurred while creating snapshot for {vm_name}: {e}")
+
+def snapshot_exists(vm_name, snapshot_name):
+    """
+    Checks if a snapshot with the given name exists for the specified virtual machine.
+
+    Parameters:
+        vm_name (str): The name of the virtual machine.
+        snapshot_name (str): The name of the snapshot to check for.
+
+    Returns:
+        bool: True if the snapshot exists, False otherwise.
+    """
+    try:
+        snapshot_names = list_snapshots(vm_name)
+        return snapshot_name in snapshot_names
+    except subprocess.CalledProcessError as e:
+        logging.critical(f"Error: {e}")
+        return False
+
+def manage_snapshot(vm_name, snapshot_name, action):
+    """
+    Manages snapshots for the specified virtual machine.
+
+    Parameters:
+        vm_name (str): The name of the virtual machine.
+        snapshot_name (str): The name of the snapshot (required for actions like TAKE or DELETE).
+        action (SnapshotAction): The action to perform on the snapshot.
+
+    Returns:
+        str or None: If action is LIST, returns a string containing information about snapshots.
+                     Otherwise, returns None.
+    """
+    try:
+        if action == SnapshotAction.LIST:
+            return list_snapshots(vm_name)
+        elif action in (SnapshotAction.TAKE, SnapshotAction.DELETE):
+            command = [VM.VBOX_MANAGE.value, "snapshot", vm_name, action.value, snapshot_name]
+            log_message = f"{action.value.capitalize()}ing snapshot '{snapshot_name}' for {vm_name}..."
+            execute_subprocess_command(command, log_message)
+        else:
+            logging.critical(f"Unsupported action: {action}")
+    except subprocess.CalledProcessError as e:
+        logging.critical(f"Error during snapshot operation: {e}")
+        
+    return None
+        
+def list_snapshots(vm_name):
+    """
+    Retrieves a list of snapshot names for the specified virtual machine.
+
+    Parameters:
+        vm_name (str): The name of the virtual machine.
+
+    Returns:
+        list or None: A list containing names of snapshots if successful,
+                      otherwise None.
+    """
+    command = [VM.VBOX_MANAGE.value, "snapshot", vm_name, SnapshotAction.LIST.value, "--machinereadable"]
+    log_message = f"Checking snapshots for {vm_name}..."
+    result = execute_subprocess_command(command, log_message)
+    lines = result.stdout.split('\n')
+    snapshot_lines = []
+    for line in lines:
+        match = re.search(r'SnapshotName="([^"]+)"', line)
+        if match:
+            snapshot_lines.append(match.group(1))
+    return snapshot_lines
+
+def take_snapshot(vm_name, snapshot_name):
+    command = [VM.VBOX_MANAGE.value, "snapshot", vm_name, SnapshotAction.TAKE.value, snapshot_name]
+    log_message = f"Taking snapshot '{snapshot_name}' for {vm_name}..."
+    execute_subprocess_command(command, log_message)
+
+def delete_snapshot(vm_name, snapshot_name):
+    command = [VM.VBOX_MANAGE.value, "snapshot", vm_name, SnapshotAction.DELETE.value, snapshot_name]
+    log_message = f"Deleting snapshot '{snapshot_name}' for {vm_name}..."
+    execute_subprocess_command(command, log_message)
+
+def get_snapshot_date(snapshot_name):
+    """
+    Extracts date from snapshot name.
+
+    Parameters:
+        snapshot_name (str): Name of the snapshot.
+
+    Returns:
+        datetime.datetime: Date extracted from the snapshot name.
+    """
+    match = re.search(r'Snapshot-\d{6}', snapshot_name)
+    if match:
+        snapshot_date_str = match.group().split('-')[1]
+        try:
+            return datetime.datetime.strptime(snapshot_date_str, '%d%m%y')
+        except ValueError:
+            logging.critical(f"Issue parsing date from Snapshot name: {snapshot_name}")
+    return None
+
+def get_snapshot_name():
+    """
+    Generates a name for a snapshot based on the current date and time.
+
+    Returns:
+        str: A string representing the snapshot name formatted as "Snapshot-DDMMYY".
+    """
+    current_date = datetime.datetime.now()
+    new_snapshot_name = f"Snapshot-{current_date.strftime('%d%m%y')}"
+    return new_snapshot_name
+
+def manage_snapshot_retention(vm_name):
+    """
+    Manages snapshot retention for the specified virtual machine.
+
+    Parameters:
+        vm_name (str): The name of the virtual machine.
+        snapshot_names (list): List of snapshot names for the VM.
+
+    Returns:
+        None
+    """
+    snapshot_names = list_snapshots(vm_name)
+    try:
+        logging.info(f"Managing {vm_name} Snapshots retention...")
+        if snapshot_names:
+            current_date = datetime.datetime.now()
+            for snapshot_name in snapshot_names:
+                snapshot_date = get_snapshot_date(snapshot_name)
+                if snapshot_date:
+                    days_difference = (current_date - snapshot_date).days
+                    daily_retention = int(read_config("SnapshotDetails")['daily_retention'])
+                    logging.info(f"Snapshot: {snapshot_name}, Current Age: {days_difference} days, Max Age {daily_retention} days, Days Remaining: {daily_retention - days_difference}")
+                    if days_difference > daily_retention:
+                        manage_snapshot(vm_name, snapshot_name, SnapshotAction.DELETE)
+                        logging.info(f"Deleted snapshot: {snapshot_name}")
+        logging.info(f"{vm_name}'s Snapshot retention management completed.")
+    except Exception as e:
+        logging.critical(f"An unexpected error occurred: {e}")
+
+def manage_snapshot(vm_name, snapshot_name, action):
+    if action == SnapshotAction.LIST:
+        return list_snapshots(vm_name)
+    elif action == SnapshotAction.TAKE:
+        take_snapshot(vm_name, snapshot_name)
+    elif action == SnapshotAction.DELETE:
+        delete_snapshot(vm_name, snapshot_name)
+    else:
+        logging.error(f"Unsupported action: {action}")
 
 if __name__ == "__main__":
     main()
