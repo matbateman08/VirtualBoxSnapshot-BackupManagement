@@ -20,7 +20,7 @@ class TestYourFunctions(unittest.TestCase):
 
     @patch('os.path.abspath')
     def test_get_script_directory(self, mock_abspath):
-        mock_abspath.return_value = "/path/to/script.py"
+        mock_abspath.return_value = r"C:\VM_Management\unittesting.py"
         result = get_script_directory()
         mock_abspath.assert_called_once()
         self.assertEqual(result, "/path/to")
