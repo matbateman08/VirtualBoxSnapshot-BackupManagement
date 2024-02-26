@@ -5,8 +5,6 @@ from vm_process import VMAction, configure_logging, generate_config_from_script,
 def main():
     try:
         log_file_path = configure_logging("vmrunninglogs")
-        generate_config_from_script()
-        setup_environment_variables()
         Paths = read_config("Paths")
         os.chdir(Paths['virtual_box_path'])
         already_running = 0  
