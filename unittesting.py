@@ -1,46 +1,24 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from vm_process import read_config  
+import subprocess
+import os
+from vm_process import execute_subprocess_command, get_script_directory, get_script, create_directories, file_exists, find_used_env_vars, get_env_values, write_env_file, setup_environment_variables
 
-class TestReadConfig(unittest.TestCase):
+class TestYourFunctions(unittest.TestCase):
 
-    @patch('configparser.ConfigParser')
-    @patch('os.path.exists', return_value=True)
-    def test_read_config_success(self, mock_exists, mock_config_parser):
-        # Mock the behavior of the ConfigParser object
-        mock_parser_instance = MagicMock()
-        mock_parser_instance.__contains__.return_value = True
-        mock_parser_instance.__getitem__.return_value = {'key': 'value'}
-        mock_config_parser.return_value = mock_parser_instance
+    @patch('subprocess.run')
+    @patch('logging.info')
+    def test_execute_subprocess_command(self, mock_logging_info, mock_subprocess_run):
+        mock_subprocess_run.return_value = MagicMock(returncode=0, output="Output")
+        command = ["ls", "-l"]
+        log_message = "Testing subprocess"
+        result = execute_subprocess_command(command, log_message)
+        mock_logging_info.assert_called_with(log_message)
+        mock_subprocess_run.assert_called_with(command, capture_output=True, text=True, check=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.output, "Output")
 
-        # Call the function
-        result = read_config('example_section')
 
-        # Assert that the result is as expected
-        self.assertEqual(result, {'key': 'value'})
-
-    @patch('builtins.open', new_callable=MagicMock)
-    @patch('os.path.exists', return_value=False)
-    def test_read_config_file_not_exists(self, mock_exists, mock_open):
-        # Call the function
-        result = read_config('example_section')
-
-        # Assert that the result is None
-        self.assertIsNone(result)
-
-    @patch('builtins.open', new_callable=MagicMock)
-    @patch('os.path.exists', return_value=True)
-    def test_read_config_section_not_exists(self, mock_exists, mock_open):
-        # Mock the ConfigParser object
-        mock_parser = MagicMock()
-        mock_parser.__contains__.return_value = False
-        mock_open.return_value.__enter__.return_value = mock_parser
-
-        # Call the function
-        result = read_config('nonexistent_section')
-
-        # Assert that the result is None
-        self.assertIsNone(result)
 
 if __name__ == '__main__':
     unittest.main()
