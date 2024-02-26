@@ -52,12 +52,12 @@ def main():
             vm_names_section = VMDetails['vm_names']
             for vm_name in vm_names_section.split(','):
                 vm_name = vm_name.strip()
-                manage_vm_action(vm_name, VMAction.POWER_OFF)
+                #manage_vm_action(vm_name, VMAction.POWER_OFF)
                 create_snapshot(vm_name)
                 #export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
                 copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
                 manage_snapshot_retention(vm_name)
-                manage_vm_action(vm_name, VMAction.START_HEADLESS)
+                #manage_vm_action(vm_name, VMAction.START_HEADLESS)
             copy_backups(Paths['vm_management_source_path'], Paths['nas_misc_path'])
             copy_backups(Paths['vm_management_source_path'], Paths['office365_misc_path'])
             perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
@@ -947,10 +947,11 @@ def create_snapshot(vm_name):
         if snapshot_exists(vm_name, new_snapshot_name):
             logging.info(f"Snapshot '{new_snapshot_name}' already existed for {vm_name}.")
         else:
-            logging.info(f"Snapshot '{new_snapshot_name}' didn't exist, so taking one for {new_snapshot_name} for {vm_name}.") 
+            logging.info(f"Taking snapshot '{new_snapshot_name}' for {vm_name}.") 
             manage_snapshot(vm_name, new_snapshot_name, SnapshotAction.TAKE)
     except subprocess.CalledProcessError as e:
-        logging.error(f"Error occurred while creating snapshot for {vm_name}: {e}")
+        logging.info(f"No snapshots found for {vm_name}. Creating Snapshot 0.")
+        manage_snapshot(vm_name, "Snapshot 0", SnapshotAction.TAKE)
 
 def snapshot_exists(vm_name, snapshot_name):
     """
@@ -963,12 +964,10 @@ def snapshot_exists(vm_name, snapshot_name):
     Returns:
         bool: True if the snapshot exists, False otherwise.
     """
-    try:
-        snapshot_names = list_snapshots(vm_name)
-        return snapshot_name in snapshot_names
-    except subprocess.CalledProcessError as e:
-        logging.critical(f"Error: {e}")
-        return False
+
+    snapshot_names = list_snapshots(vm_name)
+    return snapshot_name in snapshot_names
+
 
 def manage_snapshot(vm_name, snapshot_name, action):
     """
@@ -996,7 +995,7 @@ def manage_snapshot(vm_name, snapshot_name, action):
         logging.critical(f"Error during snapshot operation: {e}")
         
     return None
-        
+
 def list_snapshots(vm_name):
     """
     Retrieves a list of snapshot names for the specified virtual machine.
