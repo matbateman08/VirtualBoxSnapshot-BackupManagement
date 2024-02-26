@@ -347,7 +347,6 @@ def read_config(section_name):
         logging.error(f"Error reading config file: {e}")
         return None
 
-
 ####### configure_logging & Helper Functions 
 def generate_log_file_path(script_directory, logfile):
     """
