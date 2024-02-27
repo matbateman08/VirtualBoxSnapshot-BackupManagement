@@ -12,8 +12,6 @@ from dotenv import load_dotenv
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-load_dotenv()
-
 class VM(Enum):
     VBOX_MANAGE = "VBoxManage"
 
@@ -1013,9 +1011,9 @@ def list_snapshots(vm_name):
     lines = result.stdout.split('\n')
     snapshot_lines = []
     for line in lines:
-        match = re.search(r'"(Snapshot-\d{6})"', line)
+        match = re.search(SnapshotAction.SNAPSHOT_PATTERN.value, line)
         if match:
-            snapshot_name = match.group(1)
+            snapshot_name = match.group(0)
             snapshot_lines.append(snapshot_name)
 
     # Sort snapshot names based on their dates in descending order
@@ -1042,7 +1040,7 @@ def get_snapshot_date(snapshot_name):
     Returns:
         datetime.datetime: Date extracted from the snapshot name.
     """
-    match = re.search(r'Snapshot-\d{6}', snapshot_name)
+    match = re.search(SnapshotAction.SNAPSHOT_PATTERN.value, snapshot_name)
     if match:
         snapshot_date_str = match.group().split('-')[1]
         try:
