@@ -44,7 +44,7 @@ def main():
                 vm_name = vm_name.strip()
                 manage_vm_action(vm_name, VMAction.POWER_OFF)
                 create_snapshot(vm_name)
-                #export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
+                export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
                 copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
                 manage_snapshot_retention(vm_name)
                 manage_vm_action(vm_name, VMAction.START_HEADLESS)
