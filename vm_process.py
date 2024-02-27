@@ -28,14 +28,6 @@ class SnapshotAction(Enum):
     DELETE = "delete"
     SNAPSHOT_PATTERN = r'Snapshot-\d{6}'
 
-class BackupType(Enum):
-    DAILY_LOCAL = "daily_backup_path"
-    MONTHLY_LOCAL = "monthly_backup_path"
-    DAILY_OFFICE365 = "office365_daily_path"
-    MONTHLY_OFFICE365 = "office365_monthly_path"
-    DAILY_NAS = "nas_daily_path"
-    MONTHLY_NAS = "nas_monthly_path"
-
 def main():
     log_file_path = configure_logging("vmmaintenance")
     generate_config_from_script()
@@ -43,9 +35,9 @@ def main():
     try:
         if is_execution_day():
             Paths = read_config("Paths")
-            daily_backup_paths, monthly_backup_paths = get_backup_paths()
             disconnect_all_active_connections(Paths['nas_path'])
-            map_network_drive(Paths['nas_path'])
+            network_drive = map_network_drive(Paths['nas_path'])
+            daily_backup_paths, monthly_backup_paths = get_backup_paths(Paths, network_drive)
             os.chdir(Paths['virtual_box_path'])
             configure_logging("vmmaintenance")
             VMDetails = read_config("VMDetails")
@@ -54,7 +46,7 @@ def main():
                 vm_name = vm_name.strip()
                 manage_vm_action(vm_name, VMAction.POWER_OFF)
                 create_snapshot(vm_name)
-                export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
+                #export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
                 copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
                 manage_snapshot_retention(vm_name)
                 manage_vm_action(vm_name, VMAction.START_HEADLESS)
@@ -90,7 +82,6 @@ def execute_subprocess_command(command, log_message):
         return result
     except subprocess.CalledProcessError as e:
         logging.error(f"{log_message} failed with return code {e.returncode}.")
-        logging.error(f"Command output: {e.output}")
         raise
     except Exception as e:
         logging.exception(f"An error occurred during execution: {e}")
@@ -198,7 +189,7 @@ def setup_environment_variables():
     """
     env_file = '.env'
     if file_exists(env_file):
-        logging.info(f"The .env file '{env_file}' already exists.")
+        logging.info(f"The .env file '{env_file}' already exists. Skipping user input and file writing.")
     else:
         logging.info("No .env file found. Let's set it up.")
         script_path = get_script()
@@ -224,7 +215,8 @@ def parse_config_from_script(script_path):
         dict: A dictionary containing parsed configuration settings.
     """
     try:
-        with open(script_path, 'r') as file:
+        script = get_script()
+        with open(script, 'r') as file:
             script_lines = file.readlines()
             section_paths = {}
             for line in script_lines:
@@ -488,10 +480,10 @@ def map_network_drive(network_path):
         # Check the return code
         if result.returncode == 0:
             logging.info(f"Network drive {network_path} successfully mapped to {drive_letter}.")
-        else:
-            logging.info(f"Failed to map network drive {network_path} to {drive_letter}. Error: {result.stderr}")
+            return True
     except Exception as e:
-        logging.info(f"An error occurred while mapping network drive {network_path}. Exception: {e}")
+        logging.info(f"ERROR Failed to map network drive {network_path} to {drive_letter}. Error: {e}")
+        return False
 
 ####### find_available_drive_letter 
 def find_available_drive_letter():
@@ -502,7 +494,7 @@ def find_available_drive_letter():
         str: Available drive letter.
     """
     try:
-        net_use_output = execute_subprocess_command(['net', 'use'], "Running 'net use' command to find available drive letters").stdout
+        net_use_output = execute_subprocess_command(['net', 'use'], "Finding available drive letters").stdout
         used_drive_letters = set()
         for line in net_use_output.split("\n")[2:]:
             drive_info = line.split()
@@ -683,26 +675,29 @@ def extract_vm_state(stdout):
     return "UNKNOWN"
 
 ########## Get backup paths
-def get_backup_paths():
+def get_backup_paths(Paths, network_drive):
     """
     Parses backup paths from paths data and creates directories if they don't exist.
 
     Returns:
         tuple: A tuple containing dictionaries for daily backup paths and monthly backup paths.
     """
-    Paths = read_config("Paths")
-
     daily_backup_paths = {
         'DAILY_LOCAL': Paths.get('source_daily_backup_path', ''),
         'DAILY_OFFICE365': Paths.get('office365_daily_path', ''),
-        'DAILY_NAS': Paths.get('nas_daily_path', '')
+        'DAILY_NAS': Paths.get('nas_daily_path', '') 
     }
 
     monthly_backup_paths = {
         'MONTHLY_LOCAL': Paths.get('source_monthly_backup_path', ''),
         'MONTHLY_OFFICE365': Paths.get('office365_monthly_path', ''),
-        'MONTHLY_NAS': Paths.get('nas_monthly_path', '')
+        'MONTHLY_NAS': Paths.get('nas_monthly_path', '') 
     }
+
+    if not network_drive:  # Assuming network_drive is the result of map_network_drive
+        # Remove NAS paths if network drive mapping failed
+        daily_backup_paths.pop('DAILY_NAS', None)
+        monthly_backup_paths.pop('MONTHLY_NAS', None)
 
     for path in daily_backup_paths.values():
         create_directories(path)
@@ -756,13 +751,16 @@ def copy_backups(source_path, paths):
         source_path (str): Source path for backup.
         paths (dict): Dictionary containing destination paths for different backup types.
     """
+    if isinstance(paths, str):  # If paths is a string, convert it into a dictionary with a single entry
+        paths = {'default': paths}
+
     for destination_key, destination_value in paths.items():
         if source_path == destination_value:
             logging.info(f"Source path {source_path} is the same as destination path {destination_value}. Skipping copying.")
             continue
         file_copy(source_path, destination_value)
         logging.info(f"Files copied from {source_path} to {destination_value}.")
-
+ 
 def file_copy(source_path, destination_path):
     """
     Copy files from source_path to destination_path.
@@ -794,10 +792,10 @@ def perform_cleanup_operations(is_last_day, daily_paths, monthly_paths):
     """
     retention = read_config("BackupDetails")
     if not is_last_day:  
-        cleanup_files_in_paths(daily_paths, retention.get('daily_retention', 0))
+        cleanup_files_in_paths(daily_paths, int(retention.get('daily_retention', 0)))
     else:
-        cleanup_files_in_paths(daily_paths, retention.get('daily_retention', 0))
-        cleanup_files_in_paths(monthly_paths, retention.get('monthly_retention', 0))
+        cleanup_files_in_paths(daily_paths, int(retention.get('daily_retention', 0)))
+        cleanup_files_in_paths(monthly_paths, int(retention.get('monthly_retention', 0)))
 
 def cleanup_files_in_paths(paths, max_age_days):
     """
@@ -814,7 +812,7 @@ def cleanup_files_in_paths(paths, max_age_days):
                 for file_name in files:
                     try:
                         cleanup_file_path = file_path(root, file_name)
-                        cleanup_file_age = file_age(cleanup_file_path, file_name)
+                        cleanup_file_age = file_age(cleanup_file_path, file_name, max_age_days)
                         if cleanup_file_age.days >= max_age_days:
                             file_remove(cleanup_file_path, file_name)
                     except Exception as e:
@@ -836,19 +834,22 @@ def file_path(root, file_name):
     """
     return os.path.join(root, file_name)
 
-def file_age(file_path, filename):
+def file_age(file_path, filename, max_age_days):
     """
     Calculate the age of the file in days.
 
     Parameters:
         file_path (str): Path to the file.
         filename (str): Name of the file.
+        max_age_days (int): Maximum allowed age of the file in days.
 
     Returns:
         datetime.timedelta: Age of the file.
     """
-    file_age = datetime.date.today() - datetime.date.fromtimestamp(os.path.getmtime(file_path))
-    logging.info(f"Checking file '{filename}' with age {file_age.days} days.")
+    file_mtime = datetime.date.fromtimestamp(os.path.getmtime(file_path))
+    file_age = datetime.date.today() - file_mtime
+    remaining_days = max_age_days - file_age.days
+    logging.info(f"Checking file '{filename}' with age {file_age.days} days. Days Remaining: {remaining_days}")
     return file_age
 
 def file_remove(file_path, file_name):
@@ -1012,9 +1013,13 @@ def list_snapshots(vm_name):
     lines = result.stdout.split('\n')
     snapshot_lines = []
     for line in lines:
-        match = re.search(r'SnapshotName="([^"]+)"', line)
+        match = re.search(r'"(Snapshot-\d{6})"', line)
         if match:
-            snapshot_lines.append(match.group(1))
+            snapshot_name = match.group(1)
+            snapshot_lines.append(snapshot_name)
+
+    # Sort snapshot names based on their dates in descending order
+    snapshot_lines = sorted(snapshot_lines, key=lambda x: x.split("-")[1], reverse=True)
     return snapshot_lines
 
 def take_snapshot(vm_name, snapshot_name):
