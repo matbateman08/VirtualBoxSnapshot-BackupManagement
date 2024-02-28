@@ -10,6 +10,7 @@ def main():
         VMDetails = read_config("VMDetails")
         vm_names_section = VMDetails['vm_names']
         for vm_name in vm_names_section.split(','):
+            vm_name = vm_name.strip()
             print(list_snapshots(vm_name))
     except Exception as e:
         logging.error(f"Error in main: {str(e)}")

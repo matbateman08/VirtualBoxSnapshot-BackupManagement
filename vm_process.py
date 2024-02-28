@@ -42,6 +42,7 @@ def main():
             vm_names_section = VMDetails['vm_names']
             for vm_name in vm_names_section.split(','):
                 vm_name = vm_name.strip()
+                logging.info(f"Processing VM: '{vm_name}'")
                 manage_vm_action(vm_name, VMAction.POWER_OFF)
                 create_snapshot(vm_name)
                 export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
@@ -769,6 +770,16 @@ def file_copy(source_path, destination_path):
         destination_path (str): Path to the destination directory.
     """
     try:
+        # Get the original permissions of the source directory
+        original_permissions = os.stat(source_path).st_mode
+        
+        # Check if the source directory is read-only
+        if os.access(source_path, os.W_OK):
+            logging.info(f"Source directory {source_path} is writable. Continuing with copying.")
+        else:
+            logging.warning(f"Source directory {source_path} is read-only. Attempting to remove read-only attribute.")
+            os.chmod(source_path, 0o777)  # Set permissions to full access
+        
         files = os.listdir(source_path)
         for file in files:
             source_file = os.path.join(source_path, file)
@@ -777,6 +788,9 @@ def file_copy(source_path, destination_path):
         logging.info(f"Files copied from {source_path} to {destination_path}.")
     except Exception as e:
         logging.error(f"Error copying files: {e}")
+    finally:
+        # Revert the permissions of the source directory to the original state
+        os.chmod(source_path, original_permissions)
 
 ########### File cleanup & helper functions
 def perform_cleanup_operations(is_last_day, daily_paths, monthly_paths):
