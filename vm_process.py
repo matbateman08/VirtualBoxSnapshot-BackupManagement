@@ -946,7 +946,6 @@ def create_snapshot(vm_name):
         if snapshot_exists(vm_name, new_snapshot_name):
             logging.info(f"Snapshot '{new_snapshot_name}' already existed for {vm_name}.")
         else:
-            logging.info(f"Taking snapshot '{new_snapshot_name}' for {vm_name}.") 
             manage_snapshot(vm_name, new_snapshot_name, SnapshotAction.TAKE)
     except subprocess.CalledProcessError as e:
         logging.info(f"No snapshots found for {vm_name}. Creating Snapshot 0.")
