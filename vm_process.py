@@ -696,7 +696,7 @@ def extract_vm_state(stdout):
     for line in vm_state_lines:
         if line.startswith("VMState="):
             return line.split("=")[1].strip('"')
-    return "UNKNOWN"
+    return "VMState: Could not be found"
 
 ########## Get backup paths
 def get_backup_paths(Paths, network_drive):
