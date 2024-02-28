@@ -500,6 +500,7 @@ def find_available_drive_letter():
                 used_drive_letters.add(drive_info[1][0])
         for letter in reversed(string.ascii_uppercase):
             if letter not in used_drive_letters:
+                logging.info(f"Drive Letter avaliable to be used: {letter}")
                 return letter
         return None
     except Exception as e:
