@@ -1010,11 +1010,16 @@ def list_snapshots(vm_name):
     result = execute_subprocess_command(command, log_message)
     lines = result.stdout.split('\n')
     snapshot_lines = []
+    existing_snapshots = set()  # To keep track of existing snapshot names
+
     for line in lines:
         match = re.search(SnapshotAction.SNAPSHOT_PATTERN.value, line)
         if match:
             snapshot_name = match.group(0)
-            snapshot_lines.append(snapshot_name)
+            # Check if the snapshot name is not already in the list
+            if snapshot_name not in existing_snapshots:
+                snapshot_lines.append(snapshot_name)
+                existing_snapshots.add(snapshot_name)  # Add to the set to mark it as seen
 
     # Sort snapshot names based on their dates in descending order
     snapshot_lines = sorted(snapshot_lines, key=lambda x: x.split("-")[1], reverse=True)
