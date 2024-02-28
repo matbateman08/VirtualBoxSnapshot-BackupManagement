@@ -11,7 +11,7 @@ from enum import Enum
 from dotenv import load_dotenv
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-load_dotenv()
+
 class VM(Enum):
     VBOX_MANAGE = "VBoxManage"
 
@@ -46,12 +46,12 @@ def main():
                 manage_vm_action(vm_name, VMAction.POWER_OFF)
                 create_snapshot(vm_name)
                 export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
-                copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
+                #copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
                 manage_snapshot_retention(vm_name)
                 manage_vm_action(vm_name, VMAction.START_HEADLESS)
-            copy_backups(Paths['vm_management_source_path'], Paths['nas_misc_path'])
-            copy_backups(Paths['vm_management_source_path'], Paths['office365_misc_path'])
-            perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
+            #copy_backups(Paths['vm_management_source_path'], Paths['nas_misc_path'])
+            #copy_backups(Paths['vm_management_source_path'], Paths['office365_misc_path'])
+            #perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
             disconnect_all_active_connections(Paths['nas_path'])
             send_log_email(log_file_path) 
         else:
@@ -468,6 +468,7 @@ def map_network_drive(network_path):
     Raises:
         Exception: If an error occurs during the process.
     """
+    load_dotenv()
     username = os.getenv("NASUsername")
     password = os.getenv("NASPassword")
     try:
@@ -583,9 +584,32 @@ def manage_vm_action(vm_name, action):
         bool: True if the action was successful, False otherwise.
     """
     try:
-        command, log_message = build_command_and_log_message(vm_name, action)
-        execute_subprocess_command(command, log_message)
-        return True
+        vm_state = get_vm_state(vm_name)  # Get the current state of the VM
+
+        # Check if the VM is already in the desired state
+        if action == VMAction.POWER_OFF and vm_state == "powered off":
+            logging.info(f"VM '{vm_name}' is already powered off.")
+            return True
+
+        if action == VMAction.START_HEADLESS and vm_state == "running":
+            logging.info(f"VM '{vm_name}' is already running.")
+            return True
+
+        # If the VM is not in the desired state, proceed to execute the command
+        if action == VMAction.POWER_OFF:
+            command, log_message = build_command_and_log_message(vm_name, action)
+            execute_subprocess_command(command, log_message)
+            return True
+
+        if action == VMAction.START_HEADLESS:
+            command, log_message = build_command_and_log_message(vm_name, action)
+            execute_subprocess_command(command, log_message)
+            return True
+
+        # Handle unsupported actions
+        logging.error(f"Unsupported action: {action}")
+        return False
+    
     except subprocess.CalledProcessError as e:
         if "returned non-zero exit status 1" in str(e):
             vm_state = get_vm_state(vm_name)
@@ -647,16 +671,16 @@ def get_vm_state(vm_name):
     """
     try:
         command, log_message = build_command_and_log_message(vm_name, VMAction.SHOW_STATE)
-        success, result = execute_subprocess_command(command, log_message)  # Capture both return values
-        if success:
-            vm_state = extract_vm_state(result)
+        result = execute_subprocess_command(command, log_message)  
+        if result:
+            vm_state = extract_vm_state(result.stdout)
             return vm_state
         else:
-            logging.error(f"Error while getting state of VM '{vm_name}': {result}")
-            return "UNKNOWN"
+            logging.error(f"Error while getting state of VM '{vm_name}': {result.stdout}")
+            return "VM State: Unknown"
     except Exception as e:
         logging.error(f"Error while getting state of VM '{vm_name}': {e}")
-        return "UNKNOWN"
+        return "Error: Unknown"
 
 def extract_vm_state(stdout):
     """
@@ -723,8 +747,10 @@ def export_vm(vm_name, daily_backup_path):
         daily_export_command = [VM.VBOX_MANAGE.value, "export", vm_name, f"--output={daily_output_path}", "--ovf20", "--options", "manifest", "--options", "nomacs"]
         execute_subprocess_command(daily_export_command, f"Backing up VM '{vm_name}' to '{daily_output_path}'.")
         logging.info("Export process completed.")
-    except Exception as e:
-        raise
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error executing command: {e}")
+        return False
 
 ########## Copying files based on dates
 def copy_backups_based_on_date(is_last_day, source_path, daily_paths, monthly_paths):
