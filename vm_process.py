@@ -11,7 +11,7 @@ from enum import Enum
 from dotenv import load_dotenv
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-
+load_dotenv()
 class VM(Enum):
     VBOX_MANAGE = "VBoxManage"
 
@@ -36,24 +36,24 @@ def main():
             disconnect_all_active_connections(Paths['nas_path'])
             network_drive = map_network_drive(Paths['nas_path'])
             daily_backup_paths, monthly_backup_paths = get_backup_paths(Paths, network_drive)
-            os.chdir(Paths['virtual_box_path'])
-            configure_logging("vmmaintenance")
-            VMDetails = read_config("VMDetails")
-            vm_names_section = VMDetails['vm_names']
-            for vm_name in vm_names_section.split(','):
-                vm_name = vm_name.strip()
-                logging.info(f"Processing VM: '{vm_name}'")
-                manage_vm_action(vm_name, VMAction.POWER_OFF)
-                create_snapshot(vm_name)
-                export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
-                copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
-                manage_snapshot_retention(vm_name)
-                manage_vm_action(vm_name, VMAction.START_HEADLESS)
-            copy_backups(Paths['vm_management_source_path'], Paths['nas_misc_path'])
-            copy_backups(Paths['vm_management_source_path'], Paths['office365_misc_path'])
-            perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
-            disconnect_all_active_connections(Paths['nas_path'])
-            send_log_email(log_file_path) 
+            #os.chdir(Paths['virtual_box_path'])
+            #configure_logging("vmmaintenance")
+            #VMDetails = read_config("VMDetails")
+            #vm_names_section = VMDetails['vm_names']
+            #for vm_name in vm_names_section.split(','):
+            #    vm_name = vm_name.strip()
+            #    logging.info(f"Processing VM: '{vm_name}'")
+            #    manage_vm_action(vm_name, VMAction.POWER_OFF)
+            #    create_snapshot(vm_name)
+            #    export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
+            #    copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
+            #    manage_snapshot_retention(vm_name)
+            #    manage_vm_action(vm_name, VMAction.START_HEADLESS)
+            #copy_backups(Paths['vm_management_source_path'], Paths['nas_misc_path'])
+            #copy_backups(Paths['vm_management_source_path'], Paths['office365_misc_path'])
+            #perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
+            #disconnect_all_active_connections(Paths['nas_path'])
+            #send_log_email(log_file_path) 
         else:
             logging.info("Not running the script today.")       
     except Exception as e:
@@ -468,13 +468,13 @@ def map_network_drive(network_path):
     Raises:
         Exception: If an error occurs during the process.
     """
-    load_dotenv()
     username = os.getenv("NASUsername")
     password = os.getenv("NASPassword")
     try:
         # Construct the net use command to map the network drive
         drive_letter = find_available_drive_letter()
-        command = ['net', 'use', drive_letter + ':', network_path, '/user:' + username, password]
+        drive_letter = drive_letter + ':'
+        command = ['net', 'use', drive_letter, network_path, '/user:' + username, password]
         result = execute_subprocess_command(command, f"Mapping network drive {network_path} to {drive_letter}")
         # Check the return code
         if result.returncode == 0:
