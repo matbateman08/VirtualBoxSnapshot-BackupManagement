@@ -48,12 +48,7 @@ def main():
                 export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
                 manage_snapshot_retention(vm_name)
                 manage_vm_action(vm_name, VMAction.START_HEADLESS)
-            copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
-            create_directories(Paths['nas_misc_path'])
-            create_directories(Paths['office365_misc_path'])
-            folder_copy(Paths['vm_management_source_path'], Paths['nas_misc_path'])
-            folder_copy(Paths['vm_management_source_path'], Paths['office365_misc_path'])
-            perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
+            file_management(Paths, daily_backup_paths, monthly_backup_paths)
             disconnect_all_active_connections(Paths['nas_path'])
             send_log_email(log_file_path) 
         else:
@@ -781,10 +776,13 @@ def copy_backups_based_on_date(is_last_day, Paths):
     """
     folder_copy(Paths['source_daily_backup_path'], Paths['office365_daily_path'])
     folder_copy(Paths['source_daily_backup_path'], Paths['nas_daily_path'])
+    folder_copy(Paths['vm_management_source_path'], Paths['nas_misc_path'])
+    folder_copy(Paths['vm_management_source_path'], Paths['office365_misc_path'])
 
     if is_last_day:
         folder_copy(Paths['source_monthly_backup_path'], Paths['office365_monthly_path'])
         folder_copy(Paths['source_monthly_backup_path'], Paths['nas_monthly_path'])
+
     '''if not is_last_day:
         copy_backups(source_path, daily_paths)
     else:
@@ -862,6 +860,14 @@ def folder_copy(src, dest):
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
 
+def file_management(Paths,daily_backup_paths, monthly_backup_paths):
+    try:
+        create_directories(Paths['nas_misc_path'])
+        create_directories(Paths['office365_misc_path'])
+        copy_backups_based_on_date(is_last_working_day_of_month(), Paths)
+        perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
+    except Exception as e:
+        logging.error(f"An unexpected error occurred:{e}")
 
 ########### File cleanup & helper functions
 def perform_cleanup_operations(is_last_day, daily_paths, monthly_paths):
