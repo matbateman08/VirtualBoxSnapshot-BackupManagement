@@ -50,6 +50,7 @@ def main():
                 manage_vm_action(vm_name, VMAction.START_HEADLESS)
             copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
             create_directories(Paths['nas_misc_path'])
+            create_directories(Paths['office365_misc_path'])
             folder_copy(Paths['vm_management_source_path'], Paths['nas_misc_path'])
             folder_copy(Paths['vm_management_source_path'], Paths['office365_misc_path'])
             perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
@@ -754,21 +755,41 @@ def export_vm(vm_name, daily_backup_path):
         return False
 
 ########## Copying files based on dates
-def copy_backups_based_on_date(is_last_day, source_path, daily_paths, monthly_paths):
+def copy_backups_based_on_date(is_last_day, Paths):
     """
     Copy backups based on the date condition.
 
     Parameters:
         is_last_day (bool): Whether it's the last day of the month.
-        source_path (str): Source path for backup.
-        daily_paths (dict): Dictionary containing daily destination paths.
-        monthly_paths (dict): Dictionary containing monthly destination paths.
+        Paths (dict): Dictionary containing source and destination paths.
+            Example:
+                {
+                    'source_daily_backup_path': str,
+                    'office365_daily_path': str,
+                    'nas_daily_path': str,
+                    'source_monthly_backup_path': str,
+                    'office365_monthly_path': str,
+                    'nas_monthly_path': str
+                }
+            where:
+                - 'source_daily_backup_path': Source path for daily backup.
+                - 'office365_daily_path': Destination path for daily backup (Office 365).
+                - 'nas_daily_path': Destination path for daily backup (NAS).
+                - 'source_monthly_backup_path': Source path for monthly backup.
+                - 'office365_monthly_path': Destination path for monthly backup (Office 365).
+                - 'nas_monthly_path': Destination path for monthly backup (NAS).
     """
-    if not is_last_day:
+    folder_copy(Paths['source_daily_backup_path'], Paths['office365_daily_path'])
+    folder_copy(Paths['source_daily_backup_path'], Paths['nas_daily_path'])
+
+    if is_last_day:
+        folder_copy(Paths['source_monthly_backup_path'], Paths['office365_monthly_path'])
+        folder_copy(Paths['source_monthly_backup_path'], Paths['nas_monthly_path'])
+    '''if not is_last_day:
         copy_backups(source_path, daily_paths)
     else:
         copy_backups(source_path, daily_paths)
-        copy_backups(source_path, monthly_paths)
+        copy_backups(source_path, monthly_paths)'''
 
 def copy_backups(source_path, paths):
     """
@@ -834,7 +855,7 @@ def folder_copy(src, dest):
         copy_folder('/path/to/source_folder', '/path/to/destination_folder')
     """
     try:
-        shutil.copytree(src, dest)
+        shutil.copytree(src, dest, dirs_exist_ok=True)
         logging.info(f"Folder '{src}' copied to '{dest}' successfully.")
     except shutil.Error as e:
         logging.error(f"Folder '{src}' could not be copied. Error: {e}")
