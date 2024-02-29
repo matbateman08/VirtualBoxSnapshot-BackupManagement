@@ -50,8 +50,8 @@ def main():
                 manage_vm_action(vm_name, VMAction.START_HEADLESS)
             copy_backups_based_on_date(is_last_working_day_of_month(), daily_backup_paths['DAILY_LOCAL'], daily_backup_paths, monthly_backup_paths)
             create_directories(Paths['nas_misc_path'])
-            folder_copy(Paths['vm_management_source_path'], Paths['nas_misc_path'])
-            folder_copy(Paths['vm_management_source_path'], Paths['office365_misc_path'])
+            copy_backups(Paths['vm_management_source_path'], Paths['nas_misc_path'])
+            copy_backups(Paths['vm_management_source_path'], Paths['office365_misc_path'])
             perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
             disconnect_all_active_connections(Paths['nas_path'])
             send_log_email(log_file_path) 
@@ -809,38 +809,6 @@ def file_copy(source_path, destination_path):
         logging.error(f"Permission denied while copying files from {source_path}. Check permissions.")
     except Exception as e:
         logging.error(f"Error copying files: {e}")
-
-def folder_copy(src, dest):
-    """
-    Copy the entire contents of a folder from the source path to the destination path.
-
-    Parameters:
-        src (str): The path to the source folder to be copied.
-        dest (str): The path to the destination folder where the contents will be copied.
-
-    Returns:
-        None
-
-    Raises:
-        shutil.Error: If an error occurs during the copying process.
-        Exception: For unexpected errors during the copying process.
-
-    Note:
-        This function uses shutil.copytree() to copy the entire folder tree from
-        the source to the destination. If the destination folder already exists,
-        its contents will be merged with the contents of the source folder.
-
-    Example:
-        copy_folder('/path/to/source_folder', '/path/to/destination_folder')
-    """
-    try:
-        shutil.copytree(src, dest)
-        logging.info(f"Folder '{src}' copied to '{dest}' successfully.")
-    except shutil.Error as e:
-        logging.error(f"Folder '{src}' could not be copied. Error: {e}")
-    except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
-
 
 ########### File cleanup & helper functions
 def perform_cleanup_operations(is_last_day, daily_paths, monthly_paths):
