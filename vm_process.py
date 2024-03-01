@@ -774,20 +774,14 @@ def copy_backups_based_on_date(is_last_day, Paths):
                 - 'office365_monthly_path': Destination path for monthly backup (Office 365).
                 - 'nas_monthly_path': Destination path for monthly backup (NAS).
     """
-    folder_copy(Paths['source_daily_backup_path'], Paths['office365_daily_path'])
-    folder_copy(Paths['source_daily_backup_path'], Paths['nas_daily_path'])
-    folder_copy(Paths['vm_management_source_path'], Paths['nas_misc_path'])
-    folder_copy(Paths['vm_management_source_path'], Paths['office365_misc_path'])
+    folder_copy_subprocess(Paths['source_daily_backup_path'], Paths['office365_daily_path'])
+    folder_copy_subprocess(Paths['source_daily_backup_path'], Paths['nas_daily_path'])
+    folder_copy_subprocess(Paths['vm_management_source_path'], Paths['nas_misc_path'])
+    folder_copy_subprocess(Paths['vm_management_source_path'], Paths['office365_misc_path'])
 
     if is_last_day:
-        folder_copy(Paths['source_monthly_backup_path'], Paths['office365_monthly_path'])
-        folder_copy(Paths['source_monthly_backup_path'], Paths['nas_monthly_path'])
-
-    '''if not is_last_day:
-        copy_backups(source_path, daily_paths)
-    else:
-        copy_backups(source_path, daily_paths)
-        copy_backups(source_path, monthly_paths)'''
+        folder_copy_subprocess(Paths['source_monthly_backup_path'], Paths['office365_monthly_path'])
+        folder_copy_subprocess(Paths['source_monthly_backup_path'], Paths['nas_monthly_path'])
 
 def copy_backups(source_path, paths):
     """
@@ -855,6 +849,38 @@ def folder_copy(src, dest):
     try:
         shutil.copytree(src, dest, dirs_exist_ok=True)
         logging.info(f"Folder '{src}' copied to '{dest}' successfully.")
+    except shutil.Error as e:
+        logging.error(f"Folder '{src}' could not be copied. Error: {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
+
+def folder_copy_subprocess(src, dest):
+    """
+    Copy the entire contents of a folder from the source path to the destination path using xcopy via subprocess.
+
+    Parameters:
+        src (str): The path to the source directory to be copied.
+        dest (str): The path to the destination directory where the contents will be copied.
+
+    Returns:
+        None
+
+    Raises:
+        shutil.Error: If an error occurs during the copying process using xcopy.
+        Exception: For unexpected errors during the copying process.
+
+    Note:
+        This function uses the xcopy command via subprocess to copy the entire folder tree from
+        the source to the destination. If the destination folder does not exist, it will be created.
+
+    Example:
+        Copy the contents of '/path/to/source_folder' to '/path/to/destination_folder':
+        >>> xcopy_copy_folder('/path/to/source_folder', '/path/to/destination_folder')
+    """
+    try:
+        command = ['xcopy', src, dest, '/E', '/I', '/Y']
+        log_message = f"Copying from: {src} Destination: {dest}..."
+        execute_subprocess_command(command, log_message)
     except shutil.Error as e:
         logging.error(f"Folder '{src}' could not be copied. Error: {e}")
     except Exception as e:
