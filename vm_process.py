@@ -780,7 +780,7 @@ def copy_backups_based_on_date(is_last_day, Paths):
     folder_copy_subprocess(Paths['vm_management_source_path'], Paths['office365_misc_path'])
 
     if is_last_day:
-        folder_copy_subprocess(Paths['source_daily_backup_path'], Paths['source_monthly_backup_path'])
+        copy_last_day_of_month(list_snapshot_files(Paths['source_daily_backup_path']), Paths['source_monthly_backup_path'])
         folder_copy_subprocess(Paths['source_monthly_backup_path'], Paths['office365_monthly_path'])
         folder_copy_subprocess(Paths['source_monthly_backup_path'], Paths['nas_monthly_path'])
 
@@ -979,6 +979,58 @@ def file_remove(file_path, file_name):
     """
     os.remove(file_path)
     logging.info(f"Deleted file '{file_name}'.")
+
+def get_date_from_filename(filename):
+    """
+    Extract the date from the filename.
+
+    Args:
+        filename (str): The filename from which to extract the date.
+
+    Returns:
+        datetime: The extracted date as a datetime object.
+    """
+    return datetime.strptime(filename.split('-')[-1], '%d%m%y')
+
+def list_snapshot_files(backup_directory):
+    """
+    List and filter snapshot files in the given directory.
+
+    Args:
+        backup_directory (str): The directory containing backup files.
+
+    Returns:
+        list: List of snapshot file paths.
+    """
+    # List all files in the directory
+    files = [os.path.join(backup_directory, f) for f in os.listdir(backup_directory) if os.path.isfile(os.path.join(backup_directory, f))]
+    # Filter files to match the format "Snapshot-DDMMYY"
+    files = [f for f in files if f.startswith("Snapshot-")]
+    return files
+
+def copy_last_day_of_month(files, destination_folder):
+    """
+    Copy the last day of the month file from each month to the destination folder.
+
+    Args:
+        files (list): List of filenames to process.
+        destination_folder (str): The folder where the last day of the month files will be copied.
+    """
+    # Group files by month
+    files_by_month = {}
+    for file in files:
+        month_year = file.split('-')[-1][:4]
+        if month_year not in files_by_month:
+            files_by_month[month_year] = []
+        files_by_month[month_year].append(file)
+
+    # Copy last day of the month file to destination folder
+    for month_files in files_by_month.values():
+        month_files.sort(key=get_date_from_filename)
+        last_file = month_files[-1]
+        shutil.copy(last_file, destination_folder)
+        print(f"Copied {last_file} to {destination_folder}")
+
 
 ############## Function that gets the log contents, loads it into an email and then sends the email
 def get_log_content(log_file_path):
