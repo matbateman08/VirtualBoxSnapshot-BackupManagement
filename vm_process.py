@@ -780,6 +780,7 @@ def copy_backups_based_on_date(is_last_day, Paths):
     folder_copy_subprocess(Paths['vm_management_source_path'], Paths['office365_misc_path'])
 
     if is_last_day:
+        folder_copy_subprocess(Paths['source_daily_backup_path'], Paths['source_monthly_backup_path'])
         folder_copy_subprocess(Paths['source_monthly_backup_path'], Paths['office365_monthly_path'])
         folder_copy_subprocess(Paths['source_monthly_backup_path'], Paths['nas_monthly_path'])
 
