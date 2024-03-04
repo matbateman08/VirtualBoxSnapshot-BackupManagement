@@ -43,11 +43,11 @@ def main():
             for vm_name in vm_names_section.split(','):
                 vm_name = vm_name.strip()
                 logging.info(f"Processing VM: '{vm_name}'")
-                #manage_vm_action(vm_name, VMAction.POWER_OFF)
+                manage_vm_action(vm_name, VMAction.POWER_OFF)
                 create_snapshot(vm_name)
-                #export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
+                export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
                 manage_snapshot_retention(vm_name)
-                #manage_vm_action(vm_name, VMAction.START_HEADLESS)
+                manage_vm_action(vm_name, VMAction.START_HEADLESS)
             file_management(Paths, daily_backup_paths, monthly_backup_paths)
             disconnect_all_active_connections(Paths['nas_path'])
             send_log_email(log_file_path) 
@@ -910,8 +910,12 @@ def file_management(Paths,daily_backup_paths, monthly_backup_paths):
         create_directories(Paths['nas_misc_path'])
         create_directories(Paths['office365_misc_path'])
         copy_backups_based_on_date(is_last_working_day_of_month(), Paths)
-        new_list = daily_backup_paths + [Paths['nas_misc_path']],Paths['office365_misc_path'],Paths['logs_location']
-        perform_cleanup_operations(is_last_working_day_of_month(), new_list, monthly_backup_paths)
+        daily_backup_paths.update({
+            'logs_nas': Paths['logs_nas'],
+            'logs_office365': Paths['logs_office365'],
+            'logs_location': Paths['logs_location']
+        })
+        perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
     except Exception as e:
         logging.error(f"An unexpected error occurred:{e}")
 
