@@ -43,11 +43,11 @@ def main():
             for vm_name in vm_names_section.split(','):
                 vm_name = vm_name.strip()
                 logging.info(f"Processing VM: '{vm_name}'")
-                manage_vm_action(vm_name, VMAction.POWER_OFF)
+                #manage_vm_action(vm_name, VMAction.POWER_OFF)
                 create_snapshot(vm_name)
-                export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
+                #export_vm(vm_name, daily_backup_paths['DAILY_LOCAL'])
                 manage_snapshot_retention(vm_name)
-                manage_vm_action(vm_name, VMAction.START_HEADLESS)
+                #manage_vm_action(vm_name, VMAction.START_HEADLESS)
             file_management(Paths, daily_backup_paths, monthly_backup_paths)
             disconnect_all_active_connections(Paths['nas_path'])
             send_log_email(log_file_path) 
@@ -867,7 +867,6 @@ def folder_copy_subprocess(src, dest):
         None
 
     Raises:
-        shutil.Error: If an error occurs during the copying process using xcopy.
         Exception: For unexpected errors during the copying process.
 
     Note:
@@ -879,21 +878,40 @@ def folder_copy_subprocess(src, dest):
         >>> xcopy_copy_folder('/path/to/source_folder', '/path/to/destination_folder')
     """
     try:
+        # List files in the source directory
+        src_files = os.listdir(src)
+        
+        # Print each file being copied
+        for file in src_files:
+            logging.info(f"Copying {file} from: {src} to Destination: {dest}...")
         command = ['xcopy', src, dest, '/E', '/I', '/Y']
         log_message = f"Copying from: {src} Destination: {dest}..."
         execute_subprocess_command(command, log_message)
-    except shutil.Error as e:
-        logging.error(f"Folder '{src}' could not be copied. Error: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
 
 def file_management(Paths,daily_backup_paths, monthly_backup_paths):
+    """
+    This function performs file management tasks including creating directories,
+    copying backups based on date, and performing cleanup operations.
+
+    Args:
+        Paths (dict): A dictionary containing various file paths used by the program.
+            * Paths['nas_misc_path']: Path to the NAS miscellaneous directory.
+            * Paths['office365_misc_path']: Path to the Office 365 miscellaneous directory.
+            * (Other paths can be added to the Paths dictionary as needed)
+        daily_backup_paths (list): A list containing paths to directories that require daily backups.
+        monthly_backup_paths (list): A list containing paths to directories that require monthly backups.
+
+    Returns:
+        None
+    """
     try:
         create_directories(Paths['nas_misc_path'])
         create_directories(Paths['office365_misc_path'])
         copy_backups_based_on_date(is_last_working_day_of_month(), Paths)
-        perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
-        perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
+        new_list = daily_backup_paths + [Paths['nas_misc_path']],Paths['office365_misc_path'],Paths['logs_location']
+        perform_cleanup_operations(is_last_working_day_of_month(), new_list, monthly_backup_paths)
     except Exception as e:
         logging.error(f"An unexpected error occurred:{e}")
 
