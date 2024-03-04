@@ -911,6 +911,8 @@ def file_management(Paths,daily_backup_paths, monthly_backup_paths):
         create_directories(Paths['office365_misc_path'])
         copy_backups_based_on_date(is_last_working_day_of_month(), Paths)
         daily_backup_paths.update({'logs_nas': Paths['logs_nas'],'logs_office365': Paths['logs_office365'],'logs_location': Paths['logs_location']})
+        daily_backup_paths.pop('DAILY_NAS', None)
+        monthly_backup_paths.pop('MONTHLY_NAS', None)
         perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
     except Exception as e:
         logging.error(f"An unexpected error occurred:{e}")
