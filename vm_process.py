@@ -893,6 +893,7 @@ def file_management(Paths,daily_backup_paths, monthly_backup_paths):
         create_directories(Paths['office365_misc_path'])
         copy_backups_based_on_date(is_last_working_day_of_month(), Paths)
         perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
+        perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
     except Exception as e:
         logging.error(f"An unexpected error occurred:{e}")
 
@@ -926,6 +927,7 @@ def cleanup_files_in_paths(paths, max_age_days):
         for destination_path in paths.values():
             logging.info(f"Cleaning up files in '{destination_path}' older than {max_age_days} days.")
             for root, dirs, files in os.walk(destination_path):
+                logging.info(f"Entered subdirectory: {root}")  # Log change to subdirectory
                 for file_name in files:
                     try:
                         cleanup_file_path = file_path(root, file_name)
@@ -934,7 +936,7 @@ def cleanup_files_in_paths(paths, max_age_days):
                             file_remove(cleanup_file_path, file_name)
                     except Exception as e:
                         logging.error(f"An error occurred while processing file '{file_name}': {str(e)}")
-        logging.info("File cleanup process completed.")
+        logging.info("Finished cleaning up subdirectories in: " + destination_path)
     except Exception as e:
         logging.error(f"An error occurred during file cleanup: {str(e)}")
 
