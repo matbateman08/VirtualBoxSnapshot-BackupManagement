@@ -771,7 +771,7 @@ def copy_backups_based_on_date(is_last_day, Paths):
     folder_copy_subprocess(Paths['vm_management_source_path'], Paths['office365_misc_path'])
 
     if is_last_day:
-        copy_last_day_of_month(list_snapshot_files(Paths['source_daily_backup_path']), Paths['source_monthly_backup_path'])
+        copy_last_day_of_month(file_directory_list(Paths['source_daily_backup_path']), Paths['source_monthly_backup_path'])
         folder_copy_subprocess(Paths['source_monthly_backup_path'], Paths['office365_monthly_path'])
         folder_copy_subprocess(Paths['source_monthly_backup_path'], Paths['nas_monthly_path'])
 
@@ -1023,20 +1023,20 @@ def get_date_from_filename(filename):
     """
     return datetime.strptime(filename.split('-')[-1], '%d%m%y')
 
-def list_snapshot_files(backup_directory):
+def file_directory_list(directory):
     """
-    List and filter snapshot files in the given directory.
-
-    Args:
-        backup_directory (str): The directory containing backup files.
-
+    Returns a list of files in the given directory.
+    
+    Parameters:
+        directory (str): The directory path.
+    
     Returns:
-        list: List of snapshot file paths.
+        list: A list of files in the directory.
     """
-    # List all files in the directory
-    files = [os.path.join(backup_directory, f) for f in os.listdir(backup_directory) if os.path.isfile(os.path.join(backup_directory, f))]
-    # Filter files to match the format "Snapshot-DDMMYY"
-    files = [f for f in files if f.startswith("Snapshot-")]
+    if not os.path.isdir(directory):
+        raise ValueError("Invalid directory path")
+
+    files = os.listdir(directory)
     return files
 
 def copy_last_day_of_month(files, destination_folder):
