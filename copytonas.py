@@ -56,7 +56,7 @@ def folder_copy_subprocess(src, dest):
         for file in src_files:
             logging.info(f"Copying {file} from: {src} to Destination: {dest}...")
             file_path = os.path.join(src, file)
-            remove_hidden_attribute(file_path)
+            #remove_hidden_attribute(file_path)
             
         command = ['xcopy', src, dest, '/E', '/I', '/Y', '/H', '/C', '/F']
         log_message = f"Copying from: {src} Destination: {dest}..."

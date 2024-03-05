@@ -878,12 +878,16 @@ def folder_copy_subprocess(src, dest):
         >>> xcopy_copy_folder('/path/to/source_folder', '/path/to/destination_folder')
     """
     try:
+
         # List files in the source directory
         src_files = os.listdir(src)
         
         # Print each file being copied
         for file in src_files:
             logging.info(f"Copying {file} from: {src} to Destination: {dest}...")
+            file_path = os.path.join(src, file)
+            #remove_hidden_attribute(file_path)
+            
         command = ['xcopy', src, dest, '/E', '/I', '/Y', '/H', '/C', '/F']
         log_message = f"Copying from: {src} Destination: {dest}..."
         execute_subprocess_command(command, log_message)
@@ -916,7 +920,21 @@ def file_management(Paths,daily_backup_paths, monthly_backup_paths):
         perform_cleanup_operations(is_last_working_day_of_month(), daily_backup_paths, monthly_backup_paths)
     except Exception as e:
         logging.error(f"An unexpected error occurred:{e}")
+########### file_modification
+def remove_hidden_attribute(file_path):
+    """
+    Remove the hidden attribute from a file.
 
+    Parameters:
+        file_path (str): The path to the file.
+
+    Returns:
+        None
+    """
+    try:
+        subprocess.run(['attrib', '-h', file_path], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error removing hidden attribute from {file_path}: {e}")
 ########### File cleanup & helper functions
 def perform_cleanup_operations(is_last_day, daily_paths, monthly_paths):
     """
