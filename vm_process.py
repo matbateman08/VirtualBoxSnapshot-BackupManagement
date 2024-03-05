@@ -569,6 +569,28 @@ def is_execution_day():
     return None
 
 ####### manage_vm_action & get_vm_state & helper functions
+def is_vm_already_in_desired_state(vm_name, action):
+    vm_state = get_vm_state(vm_name)
+    if action == VMAction.POWER_OFF and vm_state == "powered off":
+        logging.info(f"VM '{vm_name}' is already powered off.")
+        return True
+    if action == VMAction.START_HEADLESS and vm_state == "running":
+        logging.info(f"VM '{vm_name}' is already running.")
+        return True
+    return False
+
+def execute_vm_action(vm_name, action):
+    command, log_message = build_command_and_log_message(vm_name, action)
+    try:
+        execute_subprocess_command(command, log_message)
+        return True
+    except subprocess.CalledProcessError as e:
+        vm_state = get_vm_state(vm_name)
+        logging.info(f"VM '{vm_name}' Current state: {vm_state}")
+        logging.error(f"Failed to start/stop VM '{vm_name}'.")
+        logging.error(f"Error: {e.stderr}")
+        return False
+
 def manage_vm_action(vm_name, action):
     """
     Perform an action on a virtual machine.
@@ -581,42 +603,11 @@ def manage_vm_action(vm_name, action):
         bool: True if the action was successful, False otherwise.
     """
     try:
-        vm_state = get_vm_state(vm_name)  # Get the current state of the VM
-
-        # Check if the VM is already in the desired state
-        if action == VMAction.POWER_OFF and vm_state == "powered off":
-            logging.info(f"VM '{vm_name}' is already powered off.")
+        if is_vm_already_in_desired_state(vm_name, action):
             return True
-
-        if action == VMAction.START_HEADLESS and vm_state == "running":
-            logging.info(f"VM '{vm_name}' is already running.")
-            return True
-
-        # If the VM is not in the desired state, proceed to execute the command
-        if action == VMAction.POWER_OFF:
-            command, log_message = build_command_and_log_message(vm_name, action)
-            execute_subprocess_command(command, log_message)
-            return True
-
-        if action == VMAction.START_HEADLESS:
-            command, log_message = build_command_and_log_message(vm_name, action)
-            execute_subprocess_command(command, log_message)
-            return True
-
-        # Handle unsupported actions
-        logging.error(f"Unsupported action: {action}")
-        return False
-    
-    except subprocess.CalledProcessError as e:
-        if "returned non-zero exit status 1" in str(e):
-            vm_state = get_vm_state(vm_name)
-            logging.info(f"VM '{vm_name}' Current state: {vm_state}")
-        elif "VBOX_E_INVALID_OBJECT_STATE" in e.stderr:
-            vm_state = get_vm_state(vm_name)
-            logging.info(f"VM '{vm_name}' Current state: {vm_state}")
-        else:
-            logging.info(f"Failed to start/stop VM '{vm_name}'.")
-            logging.info(f"Error: {e.stderr}")
+        return execute_vm_action(vm_name, action)
+    except Exception as e:
+        logging.error(f"An error occurred while managing VM '{vm_name}' with action '{action}': {e}")
         return False
 
 def build_command_and_log_message(vm_name, action=None):
