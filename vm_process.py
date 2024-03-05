@@ -1011,18 +1011,6 @@ def file_remove(file_path, file_name):
     os.remove(file_path)
     logging.info(f"Deleted file '{file_name}'.")
 
-def get_date_from_filename(filename):
-    """
-    Extract the date from the filename.
-
-    Args:
-        filename (str): The filename from which to extract the date.
-
-    Returns:
-        datetime: The extracted date as a datetime object.
-    """
-    return datetime.strptime(filename.split('-')[-1], '%d%m%y')
-
 def file_directory_list(directory):
     """
     Returns a list of files in the given directory.
@@ -1031,36 +1019,36 @@ def file_directory_list(directory):
         directory (str): The directory path.
     
     Returns:
-        list: A list of files in the directory.
+        list: A list of files in the directory with full paths.
     """
     if not os.path.isdir(directory):
         raise ValueError("Invalid directory path")
 
-    files = os.listdir(directory)
+    files = [os.path.join(directory, file) for file in os.listdir(directory)]
     return files
 
 def copy_last_day_of_month(files, destination_folder):
     """
-    Copy the last day of the month file from each month to the destination folder.
-
-    Args:
-        files (list): List of filenames to process.
-        destination_folder (str): The folder where the last day of the month files will be copied.
+    Copies the most recent file for each instance in the given list of files to the destination directory.
+    
+    Parameters:
+        files (list): A list of file paths.
+        destination_folder (str): The destination directory path.
     """
-    # Group files by month
-    files_by_month = {}
-    for file in files:
-        month_year = file.split('-')[-1][:4]
-        if month_year not in files_by_month:
-            files_by_month[month_year] = []
-        files_by_month[month_year].append(file)
-
-    # Copy last day of the month file to destination folder
-    for month_files in files_by_month.values():
-        month_files.sort(key=get_date_from_filename)
-        last_file = month_files[-1]
-        shutil.copy(last_file, destination_folder)
-        print(f"Copied {last_file} to {destination_folder}")
+    # Get a list of unique instances
+    instances = set(file.split('_')[0] for file in files)
+    
+    # Loop through each instance
+    for instance in instances:
+        # Get the files for this instance
+        instance_files = [file for file in files if file.startswith(instance)]
+        
+        # Get the most recent file for this instance
+        recent_file = max(instance_files, key=os.path.getctime)
+        
+        # Copy the most recent file to the destination directory
+        shutil.copy(recent_file, destination_folder)
+        logging.info(f"This is the recent file: {recent_file}")
 
 
 ############## Function that gets the log contents, loads it into an email and then sends the email
