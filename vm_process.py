@@ -884,7 +884,7 @@ def folder_copy_subprocess(src, dest):
         # Print each file being copied
         for file in src_files:
             logging.info(f"Copying {file} from: {src} to Destination: {dest}...")
-        command = ['xcopy', src, dest, '/E', '/I', '/Y']
+        command = ['xcopy', src, dest, '/E', '/I', '/Y', '/H', '/C', '/F']
         log_message = f"Copying from: {src} Destination: {dest}..."
         execute_subprocess_command(command, log_message)
     except Exception as e:
