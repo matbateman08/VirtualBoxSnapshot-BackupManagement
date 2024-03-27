@@ -17,7 +17,7 @@ class VM(Enum):
 
 class VMAction(Enum):
     POWER_OFF = "poweroff"
-    START_HEADLESS = "headless"
+    START_HEADLESS = "seperate"
     SHOW_STATE = "showvminfo"
 
 class SnapshotAction(Enum):
