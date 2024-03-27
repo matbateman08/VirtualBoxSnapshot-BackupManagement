@@ -1,6 +1,6 @@
 import os
 import logging
-from vm_process import VMAction, read_config, manage_vm_power, configure_logging, generate_config_from_script, send_log_email
+from vm_process import VMAction, read_config, manage_vm_action, configure_logging, generate_config_from_script, send_log_email
 
 def main():
     log_file_path = configure_logging("osrestart")
@@ -11,7 +11,7 @@ def main():
     vm_names_section = VMDetails['vm_names']
     for vm_name in vm_names_section.split(','):
         vm_name = vm_name.strip()
-        manage_vm_power(vm_name, VMAction.POWER_OFF)
+        manage_vm_action(vm_name, VMAction.POWER_OFF)
     logging.info(f"All VM's powered off. Host PC about to restart")
     restart_computer(log_file_path)
 
