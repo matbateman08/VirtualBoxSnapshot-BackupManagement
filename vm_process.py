@@ -561,12 +561,13 @@ def is_execution_day():
     Returns:
         bool or None: True if today is an execution day, False if not, None if unable to determine.
     """
-    Misc = read_config('Misc')
-    weekday_end = int(Misc['weekday_end'])
-    if weekday_end is not None:
-        current_day = datetime.datetime.now().weekday()
-        return current_day < weekday_end
-    return None
+   # Misc = read_config('Misc')
+   # weekday_end = int(Misc['weekday_end'])
+   # if weekday_end is not None:
+   #     current_day = datetime.datetime.now().weekday()
+   #     return current_day < weekday_end
+   # return None
+    return True 
 
 ####### manage_vm_action & get_vm_state & helper functions
 def is_vm_already_in_desired_state(vm_name, action):
