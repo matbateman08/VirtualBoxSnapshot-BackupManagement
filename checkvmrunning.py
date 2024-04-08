@@ -1,6 +1,6 @@
 import os
 import logging
-from vm_process import VMAction, configure_logging, generate_config_from_script, setup_environment_variables, read_config, manage_vm_action, send_log_email
+from vm_process import VMAction, configure_logging, read_config, manage_vm_action, send_log_email
 
 def main():
     try:
