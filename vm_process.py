@@ -1117,7 +1117,8 @@ def send_log_email(log_file_path):
         log_content = get_log_content(log_file_path)
         if log_content is not None:
             send_email(subject, from_email, to_email, log_content, smtp_server, smtp_port, smtp_username, smtp_password)
-    
+        else:
+            send_email("VM Restart", from_email, to_email, log_content, smtp_server, smtp_port, smtp_username, smtp_password)
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
 
